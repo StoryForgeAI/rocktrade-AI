@@ -106,10 +106,7 @@ export function DashboardShell() {
   const latestSaved = dashboard?.analyses[0] ?? null;
   const effectiveAnalysis = analysis ?? latestSaved?.result ?? null;
   const hasFile = Boolean(upload.file) || Boolean(upload.previewUrl);
-
-  const canAnalyze = useMemo(() => {
-    return hasFile && !busy;
-  }, [hasFile, busy]);
+  const canAnalyze = useMemo(() => hasFile, [hasFile]);
 
   async function loadDashboard() {
     setLoading(true);
@@ -387,13 +384,9 @@ function Sidebar({
 
       <motion.aside
         initial={false}
-        animate={{
-          width: collapsed ? 94 : 280,
-          x: mobileOpen ? 0 : undefined,
-        }}
+        animate={{ width: collapsed ? 94 : 280 }}
         className={cn(
-          'fixed inset-y-3 left-3 z-50 rounded-[2rem] border border-orange-100 bg-white/92 p-3 shadow-[0_24px_80px_rgba(177,123,52,0.12)] backdrop-blur md:sticky md:top-6 md:z-10 md:h-[calc(100vh-3rem)]',
-          mobileOpen ? 'translate-x-0' : '-translate-x-[110%] md:translate-x-0',
+          'hidden shrink-0 rounded-[2rem] border border-orange-100 bg-white/92 p-3 shadow-[0_24px_80px_rgba(177,123,52,0.12)] backdrop-blur md:sticky md:top-6 md:flex md:h-[calc(100vh-3rem)]',
         )}
       >
         <div className="flex h-full flex-col">
@@ -480,6 +473,79 @@ function Sidebar({
           </div>
         </div>
       </motion.aside>
+
+      <AnimatePresence>
+        {mobileOpen ? (
+          <motion.aside
+            initial={{ x: -320, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -320, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="fixed inset-y-3 left-3 z-50 w-[280px] rounded-[2rem] border border-orange-100 bg-white/96 p-3 shadow-[0_24px_80px_rgba(177,123,52,0.16)] backdrop-blur md:hidden"
+          >
+            <div className="flex h-full flex-col">
+              <div className="mb-5 flex items-center justify-between gap-2 px-2">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-300 text-white shadow-glow">
+                    <CandlestickChart size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-[0.22em] text-orange-500">
+                      TradeScope
+                    </div>
+                    <div className="text-xs text-stone-500">{profile.email}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileOpen(false)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700"
+                  aria-label="Close mobile menu"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition',
+                      activeTab === tab.id
+                        ? 'bg-orange-500 text-white shadow-[0_12px_30px_rgba(249,115,22,0.24)]'
+                        : 'text-stone-600 hover:bg-orange-50 hover:text-stone-900',
+                    )}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-auto space-y-3 px-2">
+                <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50 p-4">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-emerald-500" />
+                    <span className="text-sm font-semibold text-stone-900">Ready</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm font-semibold text-stone-700 transition hover:border-stone-300"
+                >
+                  <LogOut size={17} />
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </motion.aside>
+        ) : null}
+      </AnimatePresence>
     </>
   );
 }
@@ -632,7 +698,8 @@ function AnalyzeTab({
   setDragging: (value: boolean) => void;
 }) {
   const progress = [18, 46, 78, 100][analysisStep] ?? 0;
-  const hasCredits = dashboard.profile.credits >= ANALYSIS_COST;
+  const creditCount = Number(dashboard.profile.credits ?? 0);
+  const hasCredits = creditCount >= ANALYSIS_COST;
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
@@ -693,7 +760,7 @@ function AnalyzeTab({
               Choose screenshot
             </label>
 
-            <PrimaryButton onClick={onAnalyze} disabled={!canAnalyze || !hasCredits}>
+            <PrimaryButton onClick={onAnalyze} disabled={busy}>
               {busy ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
               Run AI analysis
             </PrimaryButton>
@@ -712,7 +779,7 @@ function AnalyzeTab({
               )}
             >
               {hasCredits
-                ? `${dashboard.profile.credits} credits available`
+                ? `${creditCount} credits available`
                 : 'Not enough credits to run analysis'}
             </span>
           </div>
