@@ -8,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 export function formatDate(value: string | null | undefined) {
   if (!value) return 'n/a';
   try {
-    return new Intl.DateTimeFormat('hu-HU', {
+    return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

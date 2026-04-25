@@ -1,12 +1,9 @@
 'use client';
 
-import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
   CandlestickChart,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   CreditCard,
   Gauge,
   Info,
@@ -20,9 +17,9 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ANALYSIS_COST, CREDIT_PACKS, SUBSCRIPTIONS } from '@/lib/catalog';
@@ -38,27 +35,40 @@ import { cn, formatDate } from '@/lib/utils';
 type UploadState = {
   file: File | null;
   previewUrl: string | null;
+  name: string | null;
 };
 
 type ActiveTab = 'dashboard' | 'analyze' | 'plans' | 'profile' | 'about';
 
+type NoticeTone = 'success' | 'error' | 'neutral';
+
 const tabs: { id: ActiveTab; label: string; icon: ReactNode }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={17} /> },
-  { id: 'analyze', label: 'Analyze', icon: <Sparkles size={17} /> },
-  { id: 'plans', label: 'Plans', icon: <CreditCard size={17} /> },
-  { id: 'profile', label: 'Profile', icon: <UserRound size={17} /> },
-  { id: 'about', label: 'About', icon: <Info size={17} /> },
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+  { id: 'analyze', label: 'Analyze', icon: <Sparkles size={18} /> },
+  { id: 'plans', label: 'Plans', icon: <CreditCard size={18} /> },
+  { id: 'profile', label: 'Profile', icon: <UserRound size={18} /> },
+  { id: 'about', label: 'About', icon: <Info size={18} /> },
+];
+
+const analysisSteps = [
+  'Uploading your screenshot',
+  'Reading structure, momentum, and zones',
+  'Scoring confidence and risk',
+  'Preparing the full-screen report',
 ];
 
 export function DashboardShell() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [analysis, setAnalysis] = useState<TradeAnalysis | null>(null);
-  const [upload, setUpload] = useState<UploadState>({ file: null, previewUrl: null });
+  const [upload, setUpload] = useState<UploadState>({
+    file: null,
+    previewUrl: null,
+    name: null,
+  });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: NoticeTone; text: string } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [showResult, setShowResult] = useState(false);
@@ -71,20 +81,35 @@ export function DashboardShell() {
   }, []);
 
   useEffect(() => {
-    const checkout = searchParams.get('checkout');
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get('checkout');
     if (checkout === 'success') {
-      setMessage('Checkout completed. Your plan or credit balance may update in a few seconds.');
+      setNotice({
+        tone: 'success',
+        text: 'Checkout completed. Your balance may update in a few seconds.',
+      });
       setActiveTab('plans');
+      params.delete('checkout');
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+      window.history.replaceState({}, '', next);
     }
     if (checkout === 'canceled') {
-      setMessage('Checkout was canceled. No payment was taken.');
+      setNotice({
+        tone: 'neutral',
+        text: 'Checkout was canceled. No payment was taken.',
+      });
       setActiveTab('plans');
+      params.delete('checkout');
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+      window.history.replaceState({}, '', next);
     }
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
+      if (upload.previewUrl) {
+        URL.revokeObjectURL(upload.previewUrl);
+      }
     };
   }, [upload.previewUrl]);
 
@@ -95,21 +120,27 @@ export function DashboardShell() {
     }
 
     const timers = [
-      window.setTimeout(() => setAnalysisStep(1), 650),
-      window.setTimeout(() => setAnalysisStep(2), 1700),
+      window.setTimeout(() => setAnalysisStep(1), 700),
+      window.setTimeout(() => setAnalysisStep(2), 1800),
       window.setTimeout(() => setAnalysisStep(3), 3000),
     ];
 
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
+    return () => {
+      for (const timer of timers) {
+        window.clearTimeout(timer);
+      }
+    };
   }, [busy]);
 
   const latestSaved = dashboard?.analyses[0] ?? null;
   const effectiveAnalysis = analysis ?? latestSaved?.result ?? null;
-  const hasFile = Boolean(upload.file) || Boolean(upload.previewUrl);
-  const canAnalyze = useMemo(() => hasFile, [hasFile]);
+  const progress = [12, 42, 76, 100][analysisStep] ?? 0;
+  const creditCount = dashboard?.profile.credits ?? 0;
+  const hasCredits = creditCount >= ANALYSIS_COST;
 
   async function loadDashboard() {
     setLoading(true);
+
     try {
       const {
         data: { session },
@@ -125,11 +156,7 @@ export function DashboardShell() {
       const [{ data: profile, error: profileError }, { data: subscription }, { data: analyses }] =
         await Promise.all([
           supabase.from('users').select('*').eq('id', userId).single(),
-          supabase
-            .from('subscriptions')
-            .select('*')
-            .eq('user_id', userId)
-            .maybeSingle(),
+          supabase.from('subscriptions').select('*').eq('user_id', userId).maybeSingle(),
           supabase
             .from('analyses')
             .select('*')
@@ -138,82 +165,113 @@ export function DashboardShell() {
             .limit(8),
         ]);
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        throw profileError;
+      }
 
       setDashboard({
         profile: profile as UserProfile,
-        subscription: (subscription as DashboardData['subscription']) ?? null,
+        subscription: dashboardSubscriptionOrNull(subscription),
         analyses: (analyses as AnalysisRecord[]) ?? [],
       });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not load your dashboard.');
+      setNotice({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Could not load your dashboard.',
+      });
     } finally {
       setLoading(false);
     }
   }
 
-  function onFileChange(file: File | null) {
-    if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
+  function setUploadFile(file: File | null) {
+    if (upload.previewUrl) {
+      URL.revokeObjectURL(upload.previewUrl);
+    }
+
     if (!file) {
-      setUpload({ file: null, previewUrl: null });
+      setUpload({ file: null, previewUrl: null, name: null });
       return;
     }
 
     setUpload({
       file,
       previewUrl: URL.createObjectURL(file),
+      name: file.name,
     });
-    setMessage(`Selected file: ${file.name}`);
+    setNotice({ tone: 'success', text: `Selected screenshot: ${file.name}` });
   }
 
   async function handleAnalyze() {
-    if (!upload.file || !dashboard) {
-      setMessage('Please select a chart screenshot first.');
+    if (!upload.file) {
+      setNotice({ tone: 'error', text: 'Please choose a screenshot before starting the analysis.' });
       return;
     }
 
-    if (dashboard.profile.credits < ANALYSIS_COST) {
-      setMessage('Not enough credits. Please add credits or switch plans.');
+    if (!dashboard) {
+      setNotice({ tone: 'error', text: 'Dashboard data is still loading. Please try again.' });
+      return;
+    }
+
+    if (!hasCredits) {
       setActiveTab('plans');
+      setNotice({
+        tone: 'error',
+        text: 'You do not have enough credits. Please buy more credits or switch to a plan.',
+      });
       return;
     }
 
     setBusy(true);
-    setMessage(null);
+    setNotice(null);
     setActiveTab('analyze');
 
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) {
         router.replace('/auth');
         return;
       }
 
-      const storagePath = `${user.id}/${Date.now()}-${upload.file.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from('uploads')
-        .upload(storagePath, upload.file, {
-          upsert: false,
-          contentType: upload.file.type || 'image/png',
-        });
+      const safeName = upload.file.name.replace(/\s+/g, '-');
+      const storagePath = `${user.id}/${Date.now()}-${safeName}`;
 
-      if (uploadError) throw uploadError;
+      const { error: uploadError } = await supabase.storage.from('uploads').upload(storagePath, upload.file, {
+        upsert: false,
+        contentType: upload.file.type || 'image/png',
+      });
+
+      if (uploadError) {
+        throw uploadError;
+      }
 
       const { data, error } = await supabase.functions.invoke('analyze-trade-image', {
         body: { storagePath },
       });
 
-      if (error) throw error;
-      if (!data?.analysis) throw new Error('No analysis came back from the server.');
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.analysis) {
+        throw new Error('No analysis came back from the server.');
+      }
 
       setAnalysis(data.analysis as TradeAnalysis);
       setShowResult(true);
-      setMessage('Analysis complete. The chart was saved and your credits were updated.');
+      setNotice({
+        tone: 'success',
+        text: 'Analysis complete. The result has been saved and your credits were updated.',
+      });
       await loadDashboard();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Analysis failed.');
+      setNotice({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Analysis failed.',
+      });
     } finally {
       setBusy(false);
     }
@@ -221,17 +279,28 @@ export function DashboardShell() {
 
   async function handleCheckout(productId: string, mode: 'payment' | 'subscription') {
     setBusy(true);
-    setMessage(null);
+    setNotice(null);
+
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout-session', {
         body: { productId, mode },
       });
-      if (error) throw error;
-      if (!data?.url) throw new Error('Missing Stripe checkout URL.');
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.url) {
+        throw new Error('Missing Stripe checkout URL.');
+      }
+
       window.location.href = data.url as string;
     } catch (error) {
       setBusy(false);
-      setMessage(error instanceof Error ? error.message : 'Could not open checkout.');
+      setNotice({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Could not open checkout.',
+      });
     }
   }
 
@@ -242,27 +311,38 @@ export function DashboardShell() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-stone-700">
-        <LoaderCircle className="animate-spin text-orange-500" size={28} />
+      <div className="flex min-h-screen items-center justify-center bg-[#fffaf4] text-stone-700">
+        <LoaderCircle className="animate-spin text-orange-500" size={30} />
       </div>
     );
   }
 
-  if (!dashboard) return null;
+  if (!dashboard) {
+    return null;
+  }
 
   return (
-    <main className="min-h-screen px-3 py-3 md:px-6 md:py-6">
+    <main className="min-h-screen bg-[#fffaf4] px-3 py-3 md:px-6 md:py-6">
+      {mobileMenuOpen ? (
+        <button
+          type="button"
+          aria-label="Close mobile menu overlay"
+          className="fixed inset-0 z-40 bg-black/30 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      ) : null}
+
       <div className="mx-auto flex max-w-7xl gap-4">
         <Sidebar
           activeTab={activeTab}
+          collapsed={sidebarCollapsed}
+          mobileOpen={mobileMenuOpen}
+          profile={dashboard.profile}
           setActiveTab={(tab) => {
             setActiveTab(tab);
             setMobileMenuOpen(false);
           }}
-          profile={dashboard.profile}
-          collapsed={sidebarCollapsed}
           setCollapsed={setSidebarCollapsed}
-          mobileOpen={mobileMenuOpen}
           setMobileOpen={setMobileMenuOpen}
           onSignOut={() => void handleSignOut()}
         />
@@ -274,278 +354,238 @@ export function DashboardShell() {
             onToggleSidebar={() => setMobileMenuOpen(true)}
           />
 
-          {message ? (
-            <div className="mb-4 flex items-start gap-3 rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
-              <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
-              <span>{message}</span>
+          <div className="mb-4 rounded-[1.75rem] border border-orange-100 bg-white px-5 py-4 shadow-[0_16px_48px_rgba(140,102,57,0.08)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-500">
+                  TradeScope workspace
+                </div>
+                <h1 className="mt-2 text-2xl font-black text-stone-900 md:text-3xl">
+                  A cleaner dashboard with a real sidebar and a working analysis flow
+                </h1>
+              </div>
+              <div className="rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-stone-700">
+                Version TS-WEB-3
+              </div>
             </div>
+          </div>
+
+          {notice ? <NoticeBanner tone={notice.tone} text={notice.text} /> : null}
+
+          {activeTab === 'dashboard' ? (
+            <DashboardTab
+              dashboard={dashboard}
+              analysis={effectiveAnalysis}
+              onOpenAnalyze={() => setActiveTab('analyze')}
+              onOpenPlans={() => setActiveTab('plans')}
+            />
           ) : null}
 
-          <AnimatePresence mode="wait">
-            <motion.section
-              key={activeTab}
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -18 }}
-              transition={{ duration: 0.22 }}
-            >
-              {activeTab === 'dashboard' && (
-                <DashboardTab
-                  dashboard={dashboard}
-                  analysis={effectiveAnalysis}
-                  onOpenAnalyze={() => setActiveTab('analyze')}
-                  onOpenPlans={() => setActiveTab('plans')}
-                />
-              )}
+          {activeTab === 'analyze' ? (
+            <AnalyzeTab
+              busy={busy}
+              creditCount={creditCount}
+              dragging={dragging}
+              hasCredits={hasCredits}
+              progress={progress}
+              stepIndex={analysisStep}
+              upload={upload}
+              setDragging={setDragging}
+              onAnalyze={() => void handleAnalyze()}
+              onFileChange={setUploadFile}
+            />
+          ) : null}
 
-              {activeTab === 'analyze' && (
-                <AnalyzeTab
-                  dashboard={dashboard}
-                  upload={upload}
-                  dragging={dragging}
-                  busy={busy}
-                  canAnalyze={canAnalyze}
-                  analysisStep={analysisStep}
-                  onFileChange={onFileChange}
-                  onAnalyze={() => void handleAnalyze()}
-                  setDragging={setDragging}
-                />
-              )}
+          {activeTab === 'plans' ? (
+            <PlansTab
+              currentPlan={dashboard.profile.plan}
+              onCheckout={(id, mode) => void handleCheckout(id, mode)}
+            />
+          ) : null}
 
-              {activeTab === 'plans' && (
-                <PlansTab
-                  currentPlan={dashboard.profile.plan}
-                  onCheckout={(id, mode) => void handleCheckout(id, mode)}
-                />
-              )}
+          {activeTab === 'profile' ? (
+            <ProfileTab
+              dashboard={dashboard}
+              onAnalyze={() => setActiveTab('analyze')}
+              onPlans={() => setActiveTab('plans')}
+            />
+          ) : null}
 
-              {activeTab === 'profile' && (
-                <ProfileTab
-                  dashboard={dashboard}
-                  onCheckout={() => setActiveTab('plans')}
-                  onAnalyze={() => setActiveTab('analyze')}
-                />
-              )}
-
-              {activeTab === 'about' && <AboutTab />}
-            </motion.section>
-          </AnimatePresence>
+          {activeTab === 'about' ? <AboutTab /> : null}
         </div>
       </div>
 
-      <AnimatePresence>
-        {showResult && effectiveAnalysis ? (
-          <ResultOverlay
-            analysis={effectiveAnalysis}
-            previewUrl={upload.previewUrl}
-            savedAt={latestSaved?.created_at ?? null}
-            onClose={() => setShowResult(false)}
-          />
-        ) : null}
-      </AnimatePresence>
+      {showResult && effectiveAnalysis ? (
+        <ResultOverlay
+          analysis={effectiveAnalysis}
+          previewUrl={upload.previewUrl}
+          savedAt={latestSaved?.created_at ?? null}
+          onClose={() => setShowResult(false)}
+        />
+      ) : null}
     </main>
   );
 }
 
+function dashboardSubscriptionOrNull(value: DashboardData['subscription'] | null | undefined) {
+  return value ?? null;
+}
+
 function Sidebar({
   activeTab,
-  setActiveTab,
-  profile,
   collapsed,
-  setCollapsed,
   mobileOpen,
+  profile,
+  setActiveTab,
+  setCollapsed,
   setMobileOpen,
   onSignOut,
 }: {
   activeTab: ActiveTab;
-  setActiveTab: (tab: ActiveTab) => void;
-  profile: UserProfile;
   collapsed: boolean;
-  setCollapsed: (value: boolean) => void;
   mobileOpen: boolean;
+  profile: UserProfile;
+  setActiveTab: (tab: ActiveTab) => void;
+  setCollapsed: (value: boolean) => void;
   setMobileOpen: (value: boolean) => void;
   onSignOut: () => void;
 }) {
   return (
     <>
-      <AnimatePresence>
-        {mobileOpen ? (
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            className="fixed inset-0 z-40 bg-black/25 md:hidden"
-            aria-label="Close menu overlay"
-          />
-        ) : null}
-      </AnimatePresence>
-
-      <motion.aside
-        initial={false}
-        animate={{ width: collapsed ? 94 : 280 }}
+      <aside
         className={cn(
-          'hidden shrink-0 rounded-[2rem] border border-orange-100 bg-white/92 p-3 shadow-[0_24px_80px_rgba(177,123,52,0.12)] backdrop-blur md:sticky md:top-6 md:flex md:h-[calc(100vh-3rem)]',
+          'hidden shrink-0 flex-col rounded-[2rem] border border-orange-100 bg-white px-3 py-3 shadow-[0_24px_80px_rgba(177,123,52,0.12)] md:sticky md:top-6 md:flex md:h-[calc(100vh-3rem)]',
+          collapsed ? 'md:w-[96px]' : 'md:w-[280px]',
         )}
       >
-        <div className="flex h-full flex-col">
-          <div className="mb-5 flex items-center justify-between gap-2 px-2">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-300 text-white shadow-glow">
-                <CandlestickChart size={20} />
-              </div>
-              {!collapsed ? (
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.22em] text-orange-500">
-                    TradeScope
-                  </div>
-                  <div className="text-xs text-stone-500">{profile.email}</div>
-                </div>
-              ) : null}
-            </div>
+        <SidebarInner
+          activeTab={activeTab}
+          collapsed={collapsed}
+          profile={profile}
+          setActiveTab={setActiveTab}
+          onClose={() => setMobileOpen(false)}
+          onSignOut={onSignOut}
+          onToggleCollapse={() => setCollapsed(!collapsed)}
+        />
+      </aside>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCollapsed(!collapsed)}
-                className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 md:inline-flex"
-                aria-label="Collapse menu"
-              >
-                {collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setMobileOpen(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 md:hidden"
-                aria-label="Close mobile menu"
-              >
-                <X size={17} />
-              </button>
-            </div>
+      {mobileOpen ? (
+        <aside className="fixed inset-y-3 left-3 z-50 flex w-[288px] flex-col rounded-[2rem] border border-orange-100 bg-white px-3 py-3 shadow-[0_24px_80px_rgba(177,123,52,0.16)] md:hidden">
+          <SidebarInner
+            activeTab={activeTab}
+            collapsed={false}
+            profile={profile}
+            setActiveTab={setActiveTab}
+            onClose={() => setMobileOpen(false)}
+            onSignOut={onSignOut}
+          />
+        </aside>
+      ) : null}
+    </>
+  );
+}
+
+function SidebarInner({
+  activeTab,
+  collapsed,
+  profile,
+  setActiveTab,
+  onClose,
+  onSignOut,
+  onToggleCollapse,
+}: {
+  activeTab: ActiveTab;
+  collapsed: boolean;
+  profile: UserProfile;
+  setActiveTab: (tab: ActiveTab) => void;
+  onClose: () => void;
+  onSignOut: () => void;
+  onToggleCollapse?: () => void;
+}) {
+  return (
+    <>
+      <div className="mb-5 flex items-center justify-between gap-2 px-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-300 text-white">
+            <CandlestickChart size={20} />
           </div>
-
-          <div className="space-y-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition',
-                  activeTab === tab.id
-                    ? 'bg-orange-500 text-white shadow-[0_12px_30px_rgba(249,115,22,0.24)]'
-                    : 'text-stone-600 hover:bg-orange-50 hover:text-stone-900',
-                  collapsed && 'justify-center',
-                )}
-              >
-                {tab.icon}
-                {!collapsed ? <span>{tab.label}</span> : null}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-auto space-y-3 px-2">
-            {!collapsed ? (
-              <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50 p-4">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-emerald-500" />
-                  <span className="text-sm font-semibold text-stone-900">Ready</span>
-                </div>
+          {!collapsed ? (
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold uppercase tracking-[0.22em] text-orange-500">
+                TradeScope
               </div>
-            ) : (
-              <div className="flex justify-center py-2">
-                <span className="h-3 w-3 rounded-full bg-emerald-500" />
-              </div>
-            )}
+              <div className="truncate text-xs text-stone-500">{profile.email}</div>
+            </div>
+          ) : null}
+        </div>
 
+        <div className="flex items-center gap-2">
+          {onToggleCollapse ? (
             <button
               type="button"
-              onClick={onSignOut}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm font-semibold text-stone-700 transition hover:border-stone-300',
-                collapsed && 'justify-center',
-              )}
+              onClick={onToggleCollapse}
+              className="hidden rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700 md:inline-flex"
             >
-              <LogOut size={17} />
-              {!collapsed ? 'Sign out' : null}
+              {collapsed ? 'Open' : 'Close'}
             </button>
-          </div>
-        </div>
-      </motion.aside>
-
-      <AnimatePresence>
-        {mobileOpen ? (
-          <motion.aside
-            initial={{ x: -320, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -320, opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="fixed inset-y-3 left-3 z-50 w-[280px] rounded-[2rem] border border-orange-100 bg-white/96 p-3 shadow-[0_24px_80px_rgba(177,123,52,0.16)] backdrop-blur md:hidden"
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 md:hidden"
+            aria-label="Close menu"
           >
-            <div className="flex h-full flex-col">
-              <div className="mb-5 flex items-center justify-between gap-2 px-2">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-300 text-white shadow-glow">
-                    <CandlestickChart size={20} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold uppercase tracking-[0.22em] text-orange-500">
-                      TradeScope
-                    </div>
-                    <div className="text-xs text-stone-500">{profile.email}</div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileOpen(false)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700"
-                  aria-label="Close mobile menu"
-                >
-                  <X size={17} />
-                </button>
-              </div>
+            <X size={17} />
+          </button>
+        </div>
+      </div>
 
-              <div className="space-y-2">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={cn(
-                      'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition',
-                      activeTab === tab.id
-                        ? 'bg-orange-500 text-white shadow-[0_12px_30px_rgba(249,115,22,0.24)]'
-                        : 'text-stone-600 hover:bg-orange-50 hover:text-stone-900',
-                    )}
-                  >
-                    {tab.icon}
-                    <span>{tab.label}</span>
-                  </button>
-                ))}
-              </div>
+      <div className="space-y-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition',
+              activeTab === tab.id
+                ? 'bg-orange-500 text-white shadow-[0_12px_30px_rgba(249,115,22,0.24)]'
+                : 'text-stone-600 hover:bg-orange-50 hover:text-stone-900',
+              collapsed && 'justify-center',
+            )}
+          >
+            {tab.icon}
+            {!collapsed ? <span>{tab.label}</span> : null}
+          </button>
+        ))}
+      </div>
 
-              <div className="mt-auto space-y-3 px-2">
-                <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50 p-4">
-                  <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full bg-emerald-500" />
-                    <span className="text-sm font-semibold text-stone-900">Ready</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onSignOut}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm font-semibold text-stone-700 transition hover:border-stone-300"
-                >
-                  <LogOut size={17} />
-                  Sign out
-                </button>
-              </div>
+      <div className="mt-auto space-y-3 px-2">
+        {!collapsed ? (
+          <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50 p-4">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-emerald-500" />
+              <span className="text-sm font-semibold text-stone-900">Ready</span>
             </div>
-          </motion.aside>
-        ) : null}
-      </AnimatePresence>
+          </div>
+        ) : (
+          <div className="flex justify-center py-2">
+            <span className="h-3 w-3 rounded-full bg-emerald-500" />
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={onSignOut}
+          className={cn(
+            'flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm font-semibold text-stone-700 transition hover:border-stone-300',
+            collapsed && 'justify-center',
+          )}
+        >
+          <LogOut size={17} />
+          {!collapsed ? 'Sign out' : null}
+        </button>
+      </div>
     </>
   );
 }
@@ -560,7 +600,7 @@ function TopBar({
   onToggleSidebar: () => void;
 }) {
   return (
-    <div className="mb-4 flex items-center justify-between gap-3 rounded-[1.75rem] border border-orange-100 bg-white/92 px-4 py-3 shadow-[0_20px_60px_rgba(177,123,52,0.10)] backdrop-blur">
+    <div className="mb-4 flex items-center justify-between gap-3 rounded-[1.75rem] border border-orange-100 bg-white px-4 py-3 shadow-[0_20px_60px_rgba(177,123,52,0.10)]">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -591,6 +631,22 @@ function TopBar({
   );
 }
 
+function NoticeBanner({ tone, text }: { tone: NoticeTone; text: string }) {
+  const palette =
+    tone === 'error'
+      ? 'border-rose-200 bg-rose-50 text-rose-900'
+      : tone === 'neutral'
+        ? 'border-stone-200 bg-stone-50 text-stone-800'
+        : 'border-emerald-200 bg-emerald-50 text-emerald-900';
+
+  return (
+    <div className={cn('mb-4 flex items-start gap-3 rounded-[1.5rem] px-5 py-4 text-sm', palette)}>
+      <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+      <span>{text}</span>
+    </div>
+  );
+}
+
 function DashboardTab({
   dashboard,
   analysis,
@@ -603,16 +659,15 @@ function DashboardTab({
   onOpenPlans: () => void;
 }) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
+    <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
       <Card className="overflow-hidden bg-gradient-to-br from-[#fff9f2] via-white to-[#fff3df]">
         <div className="grid gap-8 lg:grid-cols-[1.12fr_0.88fr]">
           <div>
             <SectionEyebrow>Overview</SectionEyebrow>
-            <h2 className="mt-3 text-3xl font-black text-stone-900">
-              Your trading workspace is ready.
-            </h2>
+            <h2 className="mt-3 text-3xl font-black text-stone-900">Your trading workspace is ready.</h2>
             <p className="mt-4 max-w-xl text-sm leading-7 text-stone-600">
-              Move fast between uploads, plans, profile, and your recent analysis history through the sidebar.
+              Use the sidebar to jump between analysis, plans, profile, and saved chart reads without hunting through a
+              single long page.
             </p>
             <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <MetricCard label="Credits" value={String(dashboard.profile.credits)} />
@@ -647,18 +702,13 @@ function DashboardTab({
         <div className="mt-5 space-y-3">
           {dashboard.analyses.length ? (
             dashboard.analyses.slice(0, 5).map((item) => (
-              <div
-                key={item.id}
-                className="rounded-[1.5rem] border border-stone-200 bg-stone-50 px-4 py-4"
-              >
+              <div key={item.id} className="rounded-[1.5rem] border border-stone-200 bg-stone-50 px-4 py-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="font-semibold capitalize text-stone-900">
                       {item.result.marketSentiment} market bias
                     </div>
-                    <div className="mt-1 text-sm leading-6 text-stone-600">
-                      {item.result.entrySuggestion}
-                    </div>
+                    <div className="mt-1 text-sm leading-6 text-stone-600">{item.result.entrySuggestion}</div>
                   </div>
                   <div className="text-right text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">
                     {item.result.confidenceScore}%
@@ -677,30 +727,28 @@ function DashboardTab({
 }
 
 function AnalyzeTab({
-  dashboard,
-  upload,
-  dragging,
   busy,
-  canAnalyze,
-  analysisStep,
-  onFileChange,
-  onAnalyze,
+  creditCount,
+  dragging,
+  hasCredits,
+  progress,
+  stepIndex,
+  upload,
   setDragging,
+  onAnalyze,
+  onFileChange,
 }: {
-  dashboard: DashboardData;
-  upload: UploadState;
-  dragging: boolean;
   busy: boolean;
-  canAnalyze: boolean;
-  analysisStep: number;
-  onFileChange: (file: File | null) => void;
-  onAnalyze: () => void;
+  creditCount: number;
+  dragging: boolean;
+  hasCredits: boolean;
+  progress: number;
+  stepIndex: number;
+  upload: UploadState;
   setDragging: (value: boolean) => void;
+  onAnalyze: () => void;
+  onFileChange: (file: File | null) => void;
 }) {
-  const progress = [18, 46, 78, 100][analysisStep] ?? 0;
-  const creditCount = Number(dashboard.profile.credits ?? 0);
-  const hasCredits = creditCount >= ANALYSIS_COST;
-
   return (
     <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
       <Card>
@@ -726,7 +774,9 @@ function AnalyzeTab({
             event.preventDefault();
             setDragging(false);
             const dropped = event.dataTransfer.files?.[0];
-            if (dropped) onFileChange(dropped);
+            if (dropped) {
+              onFileChange(dropped);
+            }
           }}
           className={cn(
             'mt-6 rounded-[2rem] border border-dashed p-5 transition',
@@ -734,17 +784,13 @@ function AnalyzeTab({
           )}
         >
           {upload.previewUrl ? (
-            <img
-              src={upload.previewUrl}
-              alt="Selected chart"
-              className="h-[340px] w-full rounded-[1.5rem] object-cover"
-            />
+            <img src={upload.previewUrl} alt="Selected chart" className="h-[340px] w-full rounded-[1.5rem] object-cover" />
           ) : (
             <div className="flex h-[340px] flex-col items-center justify-center rounded-[1.5rem] border border-stone-200 bg-white text-center">
               <UploadCloud size={28} className="mb-4 text-orange-500" />
               <div className="text-lg font-semibold text-stone-900">Drop a trading screenshot here</div>
               <div className="mt-2 max-w-md text-sm leading-6 text-stone-600">
-                Works great with TradingView, Binance, MetaTrader, broker dashboards, crypto, forex, and stocks.
+                TradingView, Binance, MetaTrader, broker dashboards, crypto, forex, and stocks all work well.
               </div>
             </div>
           )}
@@ -768,7 +814,7 @@ function AnalyzeTab({
 
           <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
             <span className="rounded-full border border-stone-200 bg-white px-3 py-2 text-stone-700">
-              {upload.file ? `Selected: ${upload.file.name}` : 'No screenshot selected yet'}
+              {upload.name ? `Selected: ${upload.name}` : 'No screenshot selected yet'}
             </span>
             <span
               className={cn(
@@ -778,9 +824,7 @@ function AnalyzeTab({
                   : 'border border-rose-200 bg-rose-50 text-rose-700',
               )}
             >
-              {hasCredits
-                ? `${creditCount} credits available`
-                : 'Not enough credits to run analysis'}
+              {hasCredits ? `${creditCount} credits available` : 'Not enough credits to run analysis'}
             </span>
           </div>
         </div>
@@ -790,7 +834,7 @@ function AnalyzeTab({
         <SectionEyebrow>Process</SectionEyebrow>
         <h3 className="mt-3 text-2xl font-black text-stone-900">Animated analysis flow</h3>
         <p className="mt-3 text-sm leading-7 text-stone-600">
-          The process is visual and simple: upload, structure reading, confidence scoring, and a full-screen result.
+          The process stays simple: upload, read the structure, score the setup, then open the report full screen.
         </p>
 
         <div className="mt-6 rounded-[1.75rem] border border-orange-100 bg-white/85 p-5">
@@ -799,17 +843,15 @@ function AnalyzeTab({
             <span>{busy ? `${progress}%` : 'Waiting for your screenshot'}</span>
           </div>
           <div className="mt-3 h-3 rounded-full bg-orange-100">
-            <motion.div
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4 }}
-              className="h-3 rounded-full bg-gradient-to-r from-orange-500 to-amber-300"
+            <div
+              className="h-3 rounded-full bg-gradient-to-r from-orange-500 to-amber-300 transition-[width] duration-500"
+              style={{ width: `${progress}%` }}
             />
           </div>
           <div className="mt-5 space-y-3">
-            <ProcessStep active={busy && analysisStep >= 0} label="Uploading the chart screenshot" />
-            <ProcessStep active={busy && analysisStep >= 1} label="Reading structure, trend, and momentum" />
-            <ProcessStep active={busy && analysisStep >= 2} label="Scoring confidence and risk" />
-            <ProcessStep active={busy && analysisStep >= 3} label="Opening the full-screen analysis view" />
+            {analysisSteps.map((step, index) => (
+              <ProcessStep key={step} active={busy && stepIndex >= index} label={step} />
+            ))}
           </div>
         </div>
       </Card>
@@ -830,7 +872,7 @@ function PlansTab({
         <SectionEyebrow>Plans</SectionEyebrow>
         <h2 className="mt-3 text-3xl font-black text-stone-900">Subscriptions and credit packs</h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600">
-          Use subscriptions for steady weekly credits, or top up with one-time packs whenever you need more analysis volume.
+          Use a plan for weekly credits, or top up with one-time packs when you need more chart reads.
         </p>
       </Card>
 
@@ -849,11 +891,9 @@ function PlansTab({
       </div>
 
       <Card>
-        <div className="mb-5">
-          <SectionEyebrow>Credit packs</SectionEyebrow>
-          <h3 className="mt-3 text-2xl font-black text-stone-900">One-time packs</h3>
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <SectionEyebrow>Credit packs</SectionEyebrow>
+        <h3 className="mt-3 text-2xl font-black text-stone-900">One-time packs</h3>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
           {CREDIT_PACKS.map((pack) => (
             <PlanCard
               key={pack.id}
@@ -873,12 +913,12 @@ function PlansTab({
 
 function ProfileTab({
   dashboard,
-  onCheckout,
   onAnalyze,
+  onPlans,
 }: {
   dashboard: DashboardData;
-  onCheckout: () => void;
   onAnalyze: () => void;
+  onPlans: () => void;
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
@@ -890,14 +930,11 @@ function ProfileTab({
           <InfoLine label="Credits" value={String(dashboard.profile.credits)} />
           <InfoLine label="Plan" value={dashboard.profile.plan} />
           <InfoLine label="Member since" value={formatDate(dashboard.profile.created_at)} />
-          <InfoLine
-            label="Current period end"
-            value={formatDate(dashboard.subscription?.current_period_end)}
-          />
+          <InfoLine label="Current period end" value={formatDate(dashboard.subscription?.current_period_end)} />
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <PrimaryButton onClick={onAnalyze}>Analyze a chart</PrimaryButton>
-          <SecondaryButton onClick={onCheckout}>See plans</SecondaryButton>
+          <SecondaryButton onClick={onPlans}>See plans</SecondaryButton>
         </div>
       </Card>
 
@@ -956,7 +993,7 @@ function AboutTab() {
         <SectionEyebrow>Design direction</SectionEyebrow>
         <h3 className="mt-3 text-2xl font-black text-stone-900">Lighter, cleaner, easier to scan</h3>
         <p className="mt-3 text-sm leading-7 text-stone-600">
-          The product now leans into a brighter editorial SaaS look, with a sharper landing page, a dedicated auth route, and an app layout that feels more like a polished workspace.
+          This version is built to feel brighter, simpler, and more useful on phones and laptops.
         </p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <MiniMetric title="Primary style" value="Light, warm, premium" />
@@ -981,20 +1018,14 @@ function ResultOverlay({
   onClose: () => void;
 }) {
   const confidence = Math.max(0, Math.min(100, analysis.confidenceScore));
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(252,247,240,0.92)] backdrop-blur-md"
-    >
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(252,247,240,0.92)] backdrop-blur-md">
       <div className="mx-auto min-h-screen max-w-7xl px-4 py-4 md:px-8 md:py-8">
         <div className="rounded-[2rem] border border-orange-100 bg-white shadow-[0_32px_120px_rgba(180,118,42,0.18)]">
-          <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[2rem] border-b border-stone-200 bg-white/92 px-5 py-4 backdrop-blur md:px-8">
+          <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[2rem] border-b border-stone-200 bg-white/92 px-5 py-4 md:px-8">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-500">
-                Analysis result
-              </div>
+              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-500">Analysis result</div>
               <div className="mt-1 text-lg font-bold text-stone-900">Full-screen trade readout</div>
             </div>
             <button
@@ -1011,11 +1042,7 @@ function ResultOverlay({
             <div className="space-y-6">
               <div className="overflow-hidden rounded-[1.8rem] border border-stone-200 bg-stone-50">
                 {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Uploaded chart"
-                    className="h-[320px] w-full object-cover md:h-[460px]"
-                  />
+                  <img src={previewUrl} alt="Uploaded chart" className="h-[320px] w-full object-cover md:h-[460px]" />
                 ) : (
                   <div className="flex h-[320px] items-center justify-center text-stone-400 md:h-[460px]">
                     Uploaded chart preview
@@ -1044,9 +1071,7 @@ function ResultOverlay({
                     },
                   ]}
                 />
-                <div className="mt-4 text-xs text-stone-500">
-                  {savedAt ? `Saved ${formatDate(savedAt)}` : 'Fresh analysis'}
-                </div>
+                <div className="mt-4 text-xs text-stone-500">{savedAt ? `Saved ${formatDate(savedAt)}` : 'Fresh analysis'}</div>
               </Card>
             </div>
 
@@ -1086,7 +1111,7 @@ function ResultOverlay({
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -1368,10 +1393,11 @@ function StatTile({
 }) {
   const palette =
     accent === 'orange'
-      ? 'bg-orange-50 border-orange-200'
+      ? 'border-orange-200 bg-orange-50'
       : accent === 'blue'
-        ? 'bg-sky-50 border-sky-200'
-        : 'bg-emerald-50 border-emerald-200';
+        ? 'border-sky-200 bg-sky-50'
+        : 'border-emerald-200 bg-emerald-50';
+
   return (
     <div className={cn('rounded-[1.5rem] border p-5', palette)}>
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{title}</div>
