@@ -266,7 +266,7 @@ export function DashboardShell() {
             <div className="mt-5 space-y-4 text-sm text-white/65">
               <StatusRow label="Auth" value="Supabase email + Google" />
               <StatusRow label="Uploads" value="Supabase Storage bucket: uploads" />
-              <StatusRow label="AI" value="Supabase Edge Function -> OpenAI" />
+              <StatusRow label="AI" value="Supabase Edge Function to OpenAI" />
               <StatusRow label="Billing" value="Stripe Checkout + webhook sync" />
             </div>
           </div>

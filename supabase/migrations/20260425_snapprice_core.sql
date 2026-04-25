@@ -147,8 +147,12 @@ declare
 begin
   update public.users
   set credits = credits + p_amount
-  where id = p_user_id
-  returning credits into updated_credits;
+  where id = p_user_id;
+
+  select credits
+  into updated_credits
+  from public.users
+  where id = p_user_id;
 
   insert into public.credit_logs (user_id, change, reason)
   values (p_user_id, p_amount, p_reason);
@@ -189,12 +193,17 @@ begin
 
   update public.users
   set credits = credits - p_cost
-  where id = p_user_id
-  returning credits into updated_credits;
+  where id = p_user_id;
+
+  select credits
+  into updated_credits
+  from public.users
+  where id = p_user_id;
 
   insert into public.analyses (user_id, image_url, result)
   values (p_user_id, p_image_url, p_result)
-  returning id into analysis_id;
+  returning id
+  into analysis_id;
 
   insert into public.credit_logs (user_id, change, reason)
   values (p_user_id, -p_cost, 'analysis');

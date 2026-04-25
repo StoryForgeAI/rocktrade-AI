@@ -95,7 +95,7 @@ export function HomePage() {
           >
             <div className="mb-10 inline-flex items-center gap-2 rounded-full border border-orange-400/30 bg-orange-500/10 px-4 py-2 text-sm text-orange-100">
               <Sparkles size={16} />
-              Screenshot -> AI insight -> credits -> saved history
+              Screenshot {'->'} AI insight {'->'} credits {'->'} saved history
             </div>
 
             <h1 className="max-w-3xl text-4xl font-black leading-tight text-white md:text-6xl">
