@@ -1,6 +1,6 @@
-# SnapPrice Web
+# TradeScope Web
 
-This is the Vercel-ready Next.js frontend for SnapPrice.
+This is the Vercel-ready Next.js frontend for TradeScope.
 
 ## Folder role
 
@@ -98,7 +98,7 @@ vercel --prod
 Suppose Vercel gives you:
 
 ```text
-https://snapprice-web.vercel.app
+https://tradescope-web.vercel.app
 ```
 
 Then do these updates.
@@ -111,12 +111,12 @@ Go to:
 
 Set:
 
-- `Site URL` = `https://snapprice-web.vercel.app`
+- `Site URL` = `https://tradescope-web.vercel.app`
 
 Add these redirect URLs:
 
-- `https://snapprice-web.vercel.app`
-- `https://snapprice-web.vercel.app/dashboard`
+- `https://tradescope-web.vercel.app`
+- `https://tradescope-web.vercel.app/dashboard`
 
 ### Supabase Google provider
 
@@ -146,7 +146,7 @@ Add:
 OPENAI_API_KEY=sk-...
 STRIPE_SECRET_KEY=sk_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-SITE_URL=https://snapprice-web.vercel.app
+SITE_URL=https://tradescope-web.vercel.app
 STRIPE_PRICE_STARTER=price_...
 STRIPE_PRICE_PRO=price_...
 STRIPE_PRICE_TRADER=price_...

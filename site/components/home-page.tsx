@@ -5,11 +5,11 @@ import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
-  BadgeDollarSign,
   CandlestickChart,
   CreditCard,
   ShieldCheck,
   Sparkles,
+  UploadCloud,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
@@ -20,11 +20,11 @@ import type { ThemeMode } from '@/lib/types';
 
 export function HomePage() {
   const [isReady, setIsReady] = useState(false);
-  const [theme, setTheme] = useState<ThemeMode>('dark');
+  const [theme, setTheme] = useState<ThemeMode>('light');
 
   useEffect(() => {
     const current =
-      document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+      document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     setTheme(current);
     setIsReady(true);
   }, []);
@@ -44,72 +44,69 @@ export function HomePage() {
   const features = useMemo(
     () => [
       {
+        icon: UploadCloud,
+        title: 'Upload any chart',
+        body: 'Drag in a screenshot from TradingView, Binance, MetaTrader, or your broker dashboard.',
+      },
+      {
         icon: Sparkles,
-        title: 'OpenAI chart reading',
-        body: 'Upload screenshots and get structured market sentiment, entries, exits, risk, and confidence.',
+        title: 'Get a focused trade readout',
+        body: 'See bias, buy and sell timing, risk, confidence, and visual signals in a cleaner report.',
       },
       {
-        icon: BadgeDollarSign,
-        title: 'Credits and plans',
-        body: '15 free starter credits, paid packs, and recurring subscriptions through Stripe Checkout.',
-      },
-      {
-        icon: ShieldCheck,
-        title: 'Supabase security',
-        body: 'Auth, private uploads, saved analyses, and server-side secret handling stay cleanly separated.',
+        icon: CreditCard,
+        title: 'Manage plans with Stripe',
+        body: 'Use simple subscriptions or one-time credit packs without changing your backend setup.',
       },
     ],
     [],
   );
 
-  if (!isReady) {
-    return <div className="min-h-screen" />;
-  }
+  if (!isReady) return <div className="min-h-screen" />;
 
   return (
-    <main className="min-h-screen px-6 py-8 md:px-10">
+    <main className="min-h-screen px-4 py-5 md:px-8 md:py-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-300 shadow-glow">
-              <CandlestickChart className="text-white" size={22} />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-300 text-white shadow-glow">
+              <CandlestickChart size={22} />
             </div>
             <div>
-              <div className="text-sm uppercase tracking-[0.2em] text-orange-200/80">
-                SnapPrice
+              <div className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-500">
+                TradeScope
               </div>
-              <div className="text-xs text-white/50">
-                Trading AI for screenshot analysis
+              <div className="text-xs text-stone-500">
+                AI trading analysis for screenshot-based workflows
               </div>
             </div>
           </div>
           <ThemeToggle />
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55 }}
-            className="glass overflow-hidden p-8 md:p-10"
+            className="rounded-[2rem] border border-orange-100 bg-white/85 p-7 shadow-[0_24px_80px_rgba(177,123,52,0.12)] backdrop-blur md:p-10"
           >
-            <div className="mb-10 inline-flex items-center gap-2 rounded-full border border-orange-400/30 bg-orange-500/10 px-4 py-2 text-sm text-orange-100">
-              <Sparkles size={16} />
-              Screenshot {'->'} AI insight {'->'} credits {'->'} saved history
+            <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-stone-700">
+              <Sparkles size={16} className="text-orange-500" />
+              Screenshot {'->'} AI readout {'->'} clearer trade plan
             </div>
 
-            <h1 className="max-w-3xl text-4xl font-black leading-tight text-white md:text-6xl">
-              Web dashboard for chart screenshots, subscriptions, and OpenAI-powered trade analysis.
+            <h1 className="mt-6 max-w-4xl text-4xl font-black leading-tight text-stone-900 md:text-6xl">
+              A lighter web workspace for chart uploads, AI analysis, and subscription-driven access.
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-white/70 md:text-lg">
-              This version is built for the browser, so Stripe checkout, Google login,
-              drag-and-drop upload, and Vercel deployment fit together cleanly.
+            <p className="mt-5 max-w-2xl text-base leading-8 text-stone-600 md:text-lg">
+              Built for fast review instead of clutter. Upload a chart, get a visual trade readout, and move between analysis, plans, profile, and dashboard tabs without digging through dense text.
             </p>
 
             <div className="mt-8 grid gap-4 md:grid-cols-3">
-              <StatPill label="Default credits" value="15" />
-              <StatPill label="Cost per analysis" value="10" />
-              <StatPill label="Hosted on" value="Vercel + Supabase" />
+              <StatPill label="Starter credits" value="15" />
+              <StatPill label="Cost per scan" value="10" />
+              <StatPill label="Built for" value="Mobile + desktop" />
             </div>
 
             <div className="mt-10 grid gap-4 md:grid-cols-3">
@@ -119,30 +116,23 @@ export function HomePage() {
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.12 + index * 0.08, duration: 0.4 }}
-                  className="rounded-3xl border border-white/10 bg-white/5 p-5"
+                  className="rounded-[1.75rem] border border-stone-200 bg-[#fffaf4] p-5"
                 >
-                  <feature.icon className="mb-4 text-orange-300" size={18} />
-                  <h2 className="font-bold text-white">{feature.title}</h2>
-                  <p className="mt-2 text-sm leading-6 text-white/65">
+                  <feature.icon className="mb-4 text-orange-500" size={18} />
+                  <h2 className="font-bold text-stone-900">{feature.title}</h2>
+                  <p className="mt-2 text-sm leading-6 text-stone-600">
                     {feature.body}
                   </p>
                 </motion.div>
               ))}
             </div>
 
-            <div className="mt-8 flex flex-wrap gap-3 text-sm text-white/60">
-              <div className="rounded-full border border-white/10 px-4 py-2">
-                Google Auth
-              </div>
-              <div className="rounded-full border border-white/10 px-4 py-2">
-                Supabase Storage
-              </div>
-              <div className="rounded-full border border-white/10 px-4 py-2">
-                Stripe Checkout
-              </div>
-              <div className="rounded-full border border-white/10 px-4 py-2">
-                Structured JSON output
-              </div>
+            <div className="mt-8 flex flex-wrap gap-3 text-sm text-stone-600">
+              <Tag>Dashboard tab</Tag>
+              <Tag>Analyze tab</Tag>
+              <Tag>Plans tab</Tag>
+              <Tag>Profile tab</Tag>
+              <Tag>About tab</Tag>
             </div>
           </motion.div>
 
@@ -153,7 +143,7 @@ export function HomePage() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -18 }}
               transition={{ duration: 0.35 }}
-              className="glass p-6 md:p-8"
+              className="rounded-[2rem] border border-orange-100 bg-white/88 p-6 shadow-[0_24px_80px_rgba(177,123,52,0.10)] backdrop-blur md:p-8"
             >
               <AuthCard />
             </motion.div>
@@ -162,19 +152,19 @@ export function HomePage() {
 
         <section className="grid gap-5 md:grid-cols-3">
           <FeatureStrip
-            icon={<CreditCard size={18} />}
-            title="Billing-ready"
-            body="Subscriptions and one-time credit packs go through the same hosted checkout pipeline."
-          />
-          <FeatureStrip
             icon={<ShieldCheck size={18} />}
-            title="Secrets off the frontend"
-            body="The browser only gets public Supabase keys. OpenAI and Stripe secrets stay in Supabase Edge Functions."
+            title="Secrets stay off the frontend"
+            body="OpenAI and Stripe secrets remain in Supabase Edge Functions, so the web app keeps only public Supabase keys."
           />
           <FeatureStrip
             icon={<ArrowRight size={18} />}
-            title="Ready for Vercel"
-            body="The app lives in a dedicated site folder so you can point Vercel at it without touching the existing Flutter files."
+            title="Designed for cleaner decisions"
+            body="The product now opens analysis in a full-screen visual report instead of a dense block of dashboard text."
+          />
+          <FeatureStrip
+            icon={<CreditCard size={18} />}
+            title="Keeps your existing backend"
+            body="No key renaming or backend reshaping is needed for this visual refresh."
           />
         </section>
       </div>
@@ -184,9 +174,9 @@ export function HomePage() {
 
 function StatPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
-      <div className="text-xs uppercase tracking-[0.18em] text-white/45">{label}</div>
-      <div className="mt-2 text-2xl font-black text-white">{value}</div>
+    <div className="rounded-[1.5rem] border border-stone-200 bg-[#fffaf4] p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{label}</div>
+      <div className="mt-2 text-2xl font-black text-stone-900">{value}</div>
     </div>
   );
 }
@@ -201,10 +191,18 @@ function FeatureStrip({
   body: string;
 }) {
   return (
-    <div className="glass p-5">
-      <div className="mb-3 text-orange-300">{icon}</div>
-      <h3 className="font-bold text-white">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-white/65">{body}</p>
+    <div className="rounded-[1.75rem] border border-stone-200 bg-white/80 p-5 shadow-[0_16px_48px_rgba(120,95,68,0.08)]">
+      <div className="mb-3 text-orange-500">{icon}</div>
+      <h3 className="font-bold text-stone-900">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-stone-600">{body}</p>
+    </div>
+  );
+}
+
+function Tag({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-full border border-stone-200 bg-white px-4 py-2">
+      {children}
     </div>
   );
 }

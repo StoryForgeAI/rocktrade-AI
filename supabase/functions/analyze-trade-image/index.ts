@@ -43,6 +43,7 @@ Deno.serve(async (request) => {
   }
 
   try {
+    console.log('analyze-trade-image: request received');
     const authorization = request.headers.get('Authorization');
     if (!authorization) {
       return new Response(JSON.stringify({ error: 'Missing auth header' }), {
@@ -60,6 +61,11 @@ Deno.serve(async (request) => {
       error: authError,
     } = await supabase.auth.getUser();
 
+    console.log('analyze-trade-image: auth checked', {
+      hasUser: Boolean(user),
+      authError: authError?.message ?? null,
+    });
+
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
@@ -68,6 +74,7 @@ Deno.serve(async (request) => {
     }
 
     const { storagePath } = await request.json();
+    console.log('analyze-trade-image: payload parsed', { storagePath });
     if (!storagePath) {
       return new Response(JSON.stringify({ error: 'storagePath is required' }), {
         status: 400,
@@ -81,6 +88,10 @@ Deno.serve(async (request) => {
     } = await supabase.from('users').select('credits').eq('id', user.id).single();
 
     if (profileError) throw profileError;
+    console.log('analyze-trade-image: profile loaded', {
+      userId: user.id,
+      credits: profile?.credits ?? null,
+    });
     if ((profile?.credits ?? 0) < 10) {
       return new Response(JSON.stringify({ error: 'Insufficient credits' }), {
         status: 402,
@@ -95,6 +106,7 @@ Deno.serve(async (request) => {
     if (signedUrlError || !signedUrlData?.signedUrl) {
       throw signedUrlError ?? new Error('Could not create signed URL');
     }
+    console.log('analyze-trade-image: signed URL created');
 
     const openAiResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -141,18 +153,30 @@ Deno.serve(async (request) => {
       }),
     });
 
+    console.log('analyze-trade-image: openai response received', {
+      ok: openAiResponse.ok,
+      status: openAiResponse.status,
+    });
     if (!openAiResponse.ok) {
       const errorText = await openAiResponse.text();
       throw new Error(`OpenAI error: ${errorText}`);
     }
 
     const openAiPayload = await openAiResponse.json();
-    const outputText = openAiPayload.output_text;
+    console.log('analyze-trade-image: openai payload keys', {
+      keys: Object.keys(openAiPayload ?? {}),
+    });
+    const outputText =
+      openAiPayload.output_text ??
+      openAiPayload.output?.[0]?.content?.find?.((item: { text?: string }) =>
+        typeof item?.text === 'string'
+      )?.text;
     if (!outputText) {
-      throw new Error('OpenAI returned no parsed output.');
+      throw new Error(`OpenAI returned no parsed output: ${JSON.stringify(openAiPayload)}`);
     }
 
     const analysis = JSON.parse(outputText);
+    console.log('analyze-trade-image: analysis parsed');
 
     const { data: transaction, error: transactionError } = await supabase.rpc(
       'consume_credits_for_analysis',
@@ -165,6 +189,7 @@ Deno.serve(async (request) => {
     );
 
     if (transactionError) throw transactionError;
+    console.log('analyze-trade-image: transaction saved', { transaction });
 
     return new Response(
       JSON.stringify({
@@ -176,6 +201,11 @@ Deno.serve(async (request) => {
       },
     );
   } catch (error) {
+    console.error('analyze-trade-image: fatal error', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
+      error,
+    });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       {

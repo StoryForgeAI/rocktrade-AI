@@ -3,27 +3,27 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
-}
-
-html[data-theme='light'] {
   color-scheme: light;
 }
 
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+
 body {
-  @apply bg-[#0b0b0c] text-white antialiased;
+  @apply bg-[#fffaf4] text-stone-900 antialiased;
+  background-image:
+    radial-gradient(circle at top left, rgba(249, 115, 22, 0.10), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.06), transparent 28%),
+    linear-gradient(180deg, #fffaf4 0%, #f8eddc 52%, #fffaf5 100%);
+}
+
+html[data-theme='dark'] body {
+  @apply text-white;
   background-image:
     radial-gradient(circle at top left, rgba(249, 115, 22, 0.18), transparent 32%),
     radial-gradient(circle at bottom right, rgba(255, 196, 120, 0.12), transparent 28%),
     linear-gradient(180deg, #090909 0%, #120c08 48%, #090909 100%);
-}
-
-html[data-theme='light'] body {
-  @apply text-stone-900;
-  background-image:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.12), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(245, 158, 11, 0.08), transparent 28%),
-    linear-gradient(180deg, #fffaf4 0%, #f8ebd8 50%, #fff7ef 100%);
 }
 
 * {
@@ -42,9 +42,9 @@ html[data-theme='light'] body {
 }
 
 .glass {
-  @apply rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl;
+  @apply rounded-3xl border border-stone-200 bg-white/80 backdrop-blur-xl;
 }
 
-html[data-theme='light'] .glass {
-  @apply border-black/5 bg-white/70;
+html[data-theme='dark'] .glass {
+  @apply border-white/10 bg-white/5;
 }

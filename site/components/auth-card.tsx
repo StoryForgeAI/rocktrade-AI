@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { LoaderCircle, Mail, LockKeyhole, Chrome } from 'lucide-react';
+import { Chrome, LoaderCircle, LockKeyhole, Mail } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 
@@ -19,19 +19,15 @@ export function AuthCard() {
 
     try {
       if (mode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         window.location.href = '/dashboard';
       } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
+        const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setMessage('Fiók létrehozva. Ha a Supabase-ben be van kapcsolva az email megerősítés, nézd meg a postaládádat.');
+        setMessage(
+          'Account created. If email confirmation is enabled in Supabase, please confirm your email before signing in.',
+        );
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Authentication failed.');
@@ -60,26 +56,26 @@ export function AuthCard() {
 
   return (
     <div>
-      <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-orange-500/18 to-transparent p-6">
-        <div className="text-sm uppercase tracking-[0.18em] text-orange-200">
-          Web access
+      <div className="rounded-[1.75rem] border border-orange-100 bg-gradient-to-br from-orange-50 via-white to-[#fff5e8] p-6">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-orange-500">
+          Account access
         </div>
-        <h2 className="mt-3 text-3xl font-black text-white">
+        <h2 className="mt-3 text-3xl font-black text-stone-900">
           {mode === 'signin' ? 'Welcome back' : 'Create your account'}
         </h2>
-        <p className="mt-3 text-sm leading-6 text-white/65">
-          Start with 15 credits, then top up with Stripe or move onto a weekly plan.
+        <p className="mt-3 text-sm leading-7 text-stone-600">
+          Sign in to open your trading dashboard, saved chart analyses, plan details, and credit balance.
         </p>
       </div>
 
-      <div className="mt-6 inline-flex rounded-2xl border border-white/10 bg-black/20 p-1">
+      <div className="mt-6 inline-flex rounded-2xl border border-stone-200 bg-stone-50 p-1">
         <button
           type="button"
           onClick={() => setMode('signin')}
           className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
             mode === 'signin'
-              ? 'bg-orange-500 text-white'
-              : 'text-white/60 hover:text-white'
+              ? 'bg-white text-stone-900 shadow-sm'
+              : 'text-stone-500 hover:text-stone-900'
           }`}
         >
           Sign in
@@ -89,8 +85,8 @@ export function AuthCard() {
           onClick={() => setMode('signup')}
           className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
             mode === 'signup'
-              ? 'bg-orange-500 text-white'
-              : 'text-white/60 hover:text-white'
+              ? 'bg-white text-stone-900 shadow-sm'
+              : 'text-stone-500 hover:text-stone-900'
           }`}
         >
           Sign up
@@ -99,7 +95,7 @@ export function AuthCard() {
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <label className="block">
-          <span className="mb-2 inline-flex items-center gap-2 text-sm text-white/70">
+          <span className="mb-2 inline-flex items-center gap-2 text-sm text-stone-600">
             <Mail size={16} />
             Email
           </span>
@@ -108,13 +104,13 @@ export function AuthCard() {
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-white outline-none transition focus:border-orange-400"
+            className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-4 text-stone-900 outline-none transition focus:border-orange-300"
             placeholder="you@example.com"
           />
         </label>
 
         <label className="block">
-          <span className="mb-2 inline-flex items-center gap-2 text-sm text-white/70">
+          <span className="mb-2 inline-flex items-center gap-2 text-sm text-stone-600">
             <LockKeyhole size={16} />
             Password
           </span>
@@ -124,7 +120,7 @@ export function AuthCard() {
             minLength={6}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-white outline-none transition focus:border-orange-400"
+            className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-4 text-stone-900 outline-none transition focus:border-orange-300"
             placeholder="At least 6 characters"
           />
         </label>
@@ -132,7 +128,7 @@ export function AuthCard() {
         <button
           type="submit"
           disabled={loading}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 py-4 font-bold text-white transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-stone-900 px-4 py-4 font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? <LoaderCircle className="animate-spin" size={18} /> : null}
           {mode === 'signin' ? 'Sign in' : 'Create account'}
@@ -143,14 +139,14 @@ export function AuthCard() {
         type="button"
         onClick={handleGoogle}
         disabled={loading}
-        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 font-semibold text-white transition hover:border-orange-400/60 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 bg-white px-4 py-4 font-semibold text-stone-800 transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Chrome size={18} />
         Continue with Google
       </button>
 
       {message ? (
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-6 text-white/75">
+        <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-700">
           {message}
         </div>
       ) : null}

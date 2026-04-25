@@ -4,17 +4,22 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
   Bot,
+  CandlestickChart,
   CheckCircle2,
   CreditCard,
   Gauge,
+  Info,
+  LayoutDashboard,
   LoaderCircle,
   LogOut,
+  Mail,
   RefreshCcw,
-  Settings2,
+  ShieldCheck,
   Sparkles,
   UploadCloud,
   UserRound,
   Wallet,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -36,6 +41,16 @@ type UploadState = {
   previewUrl: string | null;
 };
 
+type ActiveTab = 'dashboard' | 'analyze' | 'plans' | 'profile' | 'about';
+
+const tabs: { id: ActiveTab; label: string; icon: ReactNode }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+  { id: 'analyze', label: 'Analyze', icon: <Sparkles size={16} /> },
+  { id: 'plans', label: 'Plans', icon: <CreditCard size={16} /> },
+  { id: 'profile', label: 'Profile', icon: <UserRound size={16} /> },
+  { id: 'about', label: 'About', icon: <Info size={16} /> },
+];
+
 export function DashboardShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -46,6 +61,9 @@ export function DashboardShell() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [showResult, setShowResult] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState(0);
 
   useEffect(() => {
     void loadDashboard();
@@ -54,23 +72,38 @@ export function DashboardShell() {
   useEffect(() => {
     const checkout = searchParams.get('checkout');
     if (checkout === 'success') {
-      setMessage('Stripe checkout sikeres volt. Frissítsd az adatokat pár másodperc múlva, ha még nem látszik a változás.');
+      setMessage('Checkout completed. Refreshing plan and credit details may take a few seconds.');
+      setActiveTab('plans');
     }
     if (checkout === 'canceled') {
-      setMessage('A Stripe checkout megszakadt, nem történt terhelés.');
+      setMessage('Checkout was canceled. No payment was taken.');
+      setActiveTab('plans');
     }
   }, [searchParams]);
 
   useEffect(() => {
     return () => {
-      if (upload.previewUrl) {
-        URL.revokeObjectURL(upload.previewUrl);
-      }
+      if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
     };
   }, [upload.previewUrl]);
 
-  const latestSaved = dashboard?.analyses[0]?.result ?? null;
-  const effectiveAnalysis = analysis ?? latestSaved;
+  useEffect(() => {
+    if (!busy) {
+      setAnalysisStep(0);
+      return;
+    }
+
+    const intervals = [
+      window.setTimeout(() => setAnalysisStep(1), 700),
+      window.setTimeout(() => setAnalysisStep(2), 1800),
+      window.setTimeout(() => setAnalysisStep(3), 3100),
+    ];
+
+    return () => intervals.forEach((id) => window.clearTimeout(id));
+  }, [busy]);
+
+  const latestSaved = dashboard?.analyses[0] ?? null;
+  const effectiveAnalysis = analysis ?? latestSaved?.result ?? null;
 
   const canAnalyze = useMemo(() => {
     return Boolean(upload.file) && (dashboard?.profile.credits ?? 0) >= ANALYSIS_COST;
@@ -111,19 +144,17 @@ export function DashboardShell() {
       setDashboard({
         profile: profile as UserProfile,
         subscription: (subscription as DashboardData['subscription']) ?? null,
-        analyses: ((analyses as AnalysisRecord[]) ?? []),
+        analyses: (analyses as AnalysisRecord[]) ?? [],
       });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Nem sikerult betolteni a dashboardot.');
+      setMessage(error instanceof Error ? error.message : 'Could not load your dashboard.');
     } finally {
       setLoading(false);
     }
   }
 
   function setFile(file: File | null) {
-    if (upload.previewUrl) {
-      URL.revokeObjectURL(upload.previewUrl);
-    }
+    if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
     if (!file) {
       setUpload({ file: null, previewUrl: null });
       return;
@@ -136,6 +167,7 @@ export function DashboardShell() {
 
     setBusy(true);
     setMessage(null);
+    setActiveTab('analyze');
 
     try {
       const {
@@ -147,7 +179,6 @@ export function DashboardShell() {
       }
 
       const storagePath = `${user.id}/${Date.now()}-${upload.file.name}`;
-
       const { error: uploadError } = await supabase.storage
         .from('uploads')
         .upload(storagePath, upload.file, {
@@ -162,13 +193,14 @@ export function DashboardShell() {
       });
 
       if (error) throw error;
-      if (!data?.analysis) throw new Error('Nem jott vissza elemzesi adat.');
+      if (!data?.analysis) throw new Error('No analysis came back from the server.');
 
       setAnalysis(data.analysis as TradeAnalysis);
-      setMessage('Elemzes kesz, az eredmeny el lett mentve es a kreditek frissultek.');
+      setShowResult(true);
+      setMessage('Analysis complete. Your chart was saved and your credits were updated.');
       await loadDashboard();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Az elemzes nem sikerult.');
+      setMessage(error instanceof Error ? error.message : 'Analysis failed.');
     } finally {
       setBusy(false);
     }
@@ -182,11 +214,11 @@ export function DashboardShell() {
         body: { productId, mode },
       });
       if (error) throw error;
-      if (!data?.url) throw new Error('A Stripe checkout URL hianyzik.');
+      if (!data?.url) throw new Error('Missing Stripe checkout URL.');
       window.location.href = data.url as string;
     } catch (error) {
       setBusy(false);
-      setMessage(error instanceof Error ? error.message : 'A checkout megnyitasa nem sikerult.');
+      setMessage(error instanceof Error ? error.message : 'Could not open checkout.');
     }
   }
 
@@ -197,472 +229,981 @@ export function DashboardShell() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <LoaderCircle className="animate-spin text-orange-300" size={28} />
+      <div className="flex min-h-screen items-center justify-center text-stone-700">
+        <LoaderCircle className="animate-spin text-orange-500" size={28} />
       </div>
     );
   }
 
-  if (!dashboard) {
-    return null;
-  }
+  if (!dashboard) return null;
 
   return (
-    <main className="min-h-screen px-6 py-8 md:px-10">
+    <main className="min-h-screen px-4 py-5 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-sm uppercase tracking-[0.18em] text-orange-200">
-              SnapPrice dashboard
+        <header className="mb-6 rounded-[2rem] border border-orange-100 bg-white/85 p-5 shadow-[0_20px_60px_rgba(206,141,67,0.12)] backdrop-blur xl:p-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-300 text-white shadow-glow">
+                <CandlestickChart size={24} />
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-500">
+                  TradeScope AI
+                </div>
+                <h1 className="mt-2 text-2xl font-black text-stone-900 md:text-3xl">
+                  Clean chart analysis for fast trading decisions
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
+                  Upload a screenshot, let the model read structure and sentiment, then review a focused trade plan with confidence and risk context.
+                </p>
+              </div>
             </div>
-            <h1 className="mt-2 text-3xl font-black text-white">
-              {dashboard.profile.email}
-            </h1>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void loadDashboard()}
+                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 px-4 text-sm font-semibold text-stone-800 transition hover:border-orange-300 hover:bg-orange-100"
+              >
+                <RefreshCcw size={16} />
+                Refresh
+              </button>
+              <ThemeToggle />
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-700 transition hover:border-stone-300"
+              >
+                <LogOut size={16} />
+                Sign out
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void loadDashboard()}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white transition hover:border-orange-400/50"
-            >
-              <RefreshCcw size={16} />
-              Refresh
-            </button>
-            <ThemeToggle />
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white transition hover:border-orange-400/50"
-            >
-              <LogOut size={16} />
-              Sign out
-            </button>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <MetricCard label="Credits" value={String(dashboard.profile.credits)} />
+            <MetricCard label="Plan" value={dashboard.profile.plan} />
+            <MetricCard label="Status" value={dashboard.subscription?.status ?? 'free'} />
           </div>
         </header>
 
-        <section className="mb-6 grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-[2rem] bg-gradient-to-br from-orange-500 via-orange-400 to-amber-200 p-6 text-black shadow-glow">
-            <div className="flex flex-wrap gap-4">
-              <MetricCard label="Credits" value={String(dashboard.profile.credits)} dark={false} />
-              <MetricCard label="Plan" value={dashboard.profile.plan} dark={false} />
-              <MetricCard
-                label="Subscription"
-                value={dashboard.subscription?.status ?? 'free'}
-                dark={false}
-              />
-            </div>
-            <p className="mt-6 max-w-2xl text-sm leading-6 text-black/75">
-              Minden sikeres chart elemzes {ANALYSIS_COST} kreditet von le. A heti refill a
-              Supabase oldalon fut, a Stripe fizetes pedig hosted checkouttal megy.
-            </p>
+        <nav className="sticky top-3 z-20 mb-6 overflow-x-auto rounded-[1.75rem] border border-orange-100 bg-white/90 p-2 shadow-[0_12px_36px_rgba(206,141,67,0.10)] backdrop-blur">
+          <div className="flex min-w-max gap-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  'inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition',
+                  activeTab === tab.id
+                    ? 'bg-orange-500 text-white shadow-[0_10px_30px_rgba(249,115,22,0.25)]'
+                    : 'text-stone-600 hover:bg-orange-50 hover:text-stone-900',
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </div>
-
-          <div className="glass p-6">
-            <div className="flex items-center gap-3 text-white">
-              <Bot size={18} className="text-orange-300" />
-              <div className="font-bold">Runtime status</div>
-            </div>
-            <div className="mt-5 space-y-4 text-sm text-white/65">
-              <StatusRow label="Auth" value="Supabase email + Google" />
-              <StatusRow label="Uploads" value="Supabase Storage bucket: uploads" />
-              <StatusRow label="AI" value="Supabase Edge Function to OpenAI" />
-              <StatusRow label="Billing" value="Stripe Checkout + webhook sync" />
-            </div>
-          </div>
-        </section>
+        </nav>
 
         {message ? (
-          <div className="mb-6 flex items-start gap-3 rounded-3xl border border-orange-400/30 bg-orange-500/10 px-5 py-4 text-sm text-orange-50">
-            <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-orange-300" />
+          <div className="mb-5 flex items-start gap-3 rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
             <span>{message}</span>
           </div>
         ) : null}
 
-        <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="space-y-6">
-            <Panel
-              icon={<UploadCloud size={18} />}
-              title="Upload & analysis"
-              subtitle="Drag-and-drop vagy file picker alapjan megy a chart feltoltes."
-            >
-              <div
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  setDragging(false);
-                  const dropped = event.dataTransfer.files?.[0];
-                  if (dropped) setFile(dropped);
-                }}
-                className={cn(
-                  'rounded-[1.75rem] border border-dashed p-6 transition',
-                  dragging
-                    ? 'border-orange-300 bg-orange-500/10'
-                    : 'border-white/15 bg-black/20',
-                )}
-              >
-                {upload.previewUrl ? (
-                  <img
-                    src={upload.previewUrl}
-                    alt="Selected chart"
-                    className="h-72 w-full rounded-[1.25rem] object-cover"
-                  />
-                ) : (
-                  <div className="flex h-72 flex-col items-center justify-center rounded-[1.25rem] border border-white/10 bg-white/5 text-center text-white/55">
-                    <UploadCloud size={28} className="mb-4 text-orange-300" />
-                    <div className="font-semibold text-white">Drop a chart screenshot here</div>
-                    <div className="mt-2 max-w-md text-sm leading-6">
-                      BTC, forex, stock, TradingView, Binance, or broker screenshots all work.
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-orange-400">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(event) => {
-                        const nextFile = event.target.files?.[0] ?? null;
-                        setFile(nextFile);
-                      }}
-                    />
-                    Choose file
-                  </label>
-
-                  <button
-                    type="button"
-                    disabled={!canAnalyze || busy}
-                    onClick={() => void handleAnalyze()}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:border-orange-400/50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busy ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
-                    Analyze now
-                  </button>
-                </div>
-
-                <div className="mt-4 text-sm text-white/55">
-                  {upload.file ? upload.file.name : 'No file selected yet.'}
-                </div>
-              </div>
-            </Panel>
-
-            <Panel
-              icon={<Gauge size={18} />}
-              title="Latest result"
-              subtitle="OpenAI altal strukturalt JSON-bol kirajzolt elemzes."
-            >
-              {effectiveAnalysis ? (
-                <AnalysisView analysis={effectiveAnalysis} />
-              ) : (
-                <EmptyState text="Még nincs elemzés. Tölts fel egy chart screenshotot és futtasd le az első AI kört." />
-              )}
-            </Panel>
-
-            <Panel
-              icon={<Wallet size={18} />}
-              title="Recent analyses"
-              subtitle="A Supabase adatbazisban mentett legutobbi eredmenyek."
-            >
-              <div className="space-y-3">
-                {dashboard.analyses.length ? (
-                  dashboard.analyses.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-3xl border border-white/10 bg-white/5 px-4 py-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <div className="font-bold text-white">
-                            {item.result.marketSentiment.toUpperCase()}
-                          </div>
-                          <div className="mt-1 text-sm text-white/55">
-                            {item.result.entrySuggestion}
-                          </div>
-                        </div>
-                        <div className="text-right text-sm text-white/55">
-                          <div>{item.result.confidenceScore}% confidence</div>
-                          <div>{formatDate(item.created_at)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState text="A mentett analysis history itt fog megjelenni." />
-                )}
-              </div>
-            </Panel>
-          </div>
-
-          <div className="space-y-6">
-            <Panel
-              icon={<CreditCard size={18} />}
-              title="Billing"
-              subtitle="Stripe hosted checkout a webes valtozathoz."
-            >
-              <div className="space-y-4">
-                {SUBSCRIPTIONS.map((plan) => (
-                  <CheckoutRow
-                    key={plan.id}
-                    title={plan.title}
-                    price={plan.priceLabel}
-                    description={plan.description}
-                    badge={dashboard.profile.plan === plan.id ? 'Current' : undefined}
-                    onClick={() => void handleCheckout(plan.id, plan.mode)}
-                  />
-                ))}
-              </div>
-
-              <div className="mt-6 border-t border-white/10 pt-6">
-                <div className="mb-4 text-sm uppercase tracking-[0.18em] text-white/45">
-                  Credit packs
-                </div>
-                <div className="space-y-4">
-                  {CREDIT_PACKS.map((pack) => (
-                    <CheckoutRow
-                      key={pack.id}
-                      title={pack.title}
-                      price={pack.priceLabel}
-                      description={pack.description}
-                      onClick={() => void handleCheckout(pack.id, pack.mode)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </Panel>
-
-            <Panel
-              icon={<UserRound size={18} />}
-              title="Account"
-              subtitle="A Supabase users es subscriptions tablak adatai."
-            >
-              <InfoLine label="Email" value={dashboard.profile.email} />
-              <InfoLine label="Credits" value={String(dashboard.profile.credits)} />
-              <InfoLine label="Plan" value={dashboard.profile.plan} />
-              <InfoLine label="Member since" value={formatDate(dashboard.profile.created_at)} />
-              <InfoLine
-                label="Current period end"
-                value={formatDate(dashboard.subscription?.current_period_end)}
+        <AnimatePresence mode="wait">
+          <motion.section
+            key={activeTab}
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -18 }}
+            transition={{ duration: 0.22 }}
+          >
+            {activeTab === 'dashboard' && (
+              <DashboardTab
+                dashboard={dashboard}
+                analysis={effectiveAnalysis}
+                onOpenAnalyze={() => setActiveTab('analyze')}
+                onOpenPlans={() => setActiveTab('plans')}
               />
-            </Panel>
+            )}
 
-            <Panel
-              icon={<Settings2 size={18} />}
-              title="Settings"
-              subtitle="A webes telepiteshez fontos futasi pontok."
-            >
-              <InfoLine label="Frontend" value="Next.js on Vercel" />
-              <InfoLine label="Public envs" value="NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY" />
-              <InfoLine label="Server secrets" value="Supabase Edge Functions + Stripe Dashboard" />
-              <InfoLine label="Theme" value="Dark/light toggle a localStorage-ben" />
-            </Panel>
-          </div>
-        </section>
+            {activeTab === 'analyze' && (
+              <AnalyzeTab
+                dashboard={dashboard}
+                upload={upload}
+                dragging={dragging}
+                busy={busy}
+                canAnalyze={canAnalyze}
+                analysisStep={analysisStep}
+                onFileChange={setFile}
+                onAnalyze={() => void handleAnalyze()}
+                setDragging={setDragging}
+              />
+            )}
+
+            {activeTab === 'plans' && (
+              <PlansTab
+                currentPlan={dashboard.profile.plan}
+                onCheckout={(id, mode) => void handleCheckout(id, mode)}
+              />
+            )}
+
+            {activeTab === 'profile' && (
+              <ProfileTab
+                dashboard={dashboard}
+                onCheckout={() => setActiveTab('plans')}
+                onAnalyze={() => setActiveTab('analyze')}
+              />
+            )}
+
+            {activeTab === 'about' && <AboutTab />}
+          </motion.section>
+        </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {showResult && effectiveAnalysis ? (
+          <ResultOverlay
+            analysis={effectiveAnalysis}
+            previewUrl={upload.previewUrl}
+            savedAt={latestSaved?.created_at ?? null}
+            onClose={() => setShowResult(false)}
+          />
+        ) : null}
+      </AnimatePresence>
     </main>
   );
 }
 
-function Panel({
+function DashboardTab({
+  dashboard,
+  analysis,
+  onOpenAnalyze,
+  onOpenPlans,
+}: {
+  dashboard: DashboardData;
+  analysis: TradeAnalysis | null;
+  onOpenAnalyze: () => void;
+  onOpenPlans: () => void;
+}) {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <Card className="overflow-hidden bg-gradient-to-br from-[#fff9f2] via-white to-[#fff3df]">
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div>
+            <SectionEyebrow>Overview</SectionEyebrow>
+            <h2 className="mt-3 text-3xl font-black text-stone-900">
+              Your trading workspace is ready.
+            </h2>
+            <p className="mt-4 max-w-xl text-sm leading-7 text-stone-600">
+              Keep analysis fast and visual. Use the Analyze tab for uploads, Plans for checkout, and Profile for your current account state.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <PrimaryButton onClick={onOpenAnalyze}>Start analysis</PrimaryButton>
+              <SecondaryButton onClick={onOpenPlans}>Manage plans</SecondaryButton>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-orange-100 bg-white/80 p-5">
+            <div className="mb-5 text-sm font-semibold text-stone-500">Runtime</div>
+            <div className="space-y-3">
+              <StatusChip label="Auth" value="Email + Google" />
+              <StatusChip label="Storage" value="Private uploads bucket" />
+              <StatusChip label="Analysis" value="OpenAI via Edge Function" />
+              <StatusChip label="Billing" value="Stripe Checkout" />
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionEyebrow>Recent activity</SectionEyebrow>
+        <h3 className="mt-3 text-xl font-black text-stone-900">Saved analyses</h3>
+        <div className="mt-5 space-y-3">
+          {dashboard.analyses.length ? (
+            dashboard.analyses.slice(0, 4).map((item) => (
+              <div
+                key={item.id}
+                className="rounded-[1.5rem] border border-stone-200 bg-stone-50 px-4 py-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-semibold capitalize text-stone-900">
+                      {item.result.marketSentiment} market bias
+                    </div>
+                    <div className="mt-1 text-sm leading-6 text-stone-600">
+                      {item.result.entrySuggestion}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">
+                    {item.result.confidenceScore}%
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-stone-500">{formatDate(item.created_at)}</div>
+              </div>
+            ))
+          ) : (
+            <EmptyState text="Your saved analyses will appear here after the first completed upload." />
+          )}
+        </div>
+
+        {analysis ? (
+          <div className="mt-5 rounded-[1.5rem] border border-orange-100 bg-orange-50 p-5">
+            <div className="text-sm font-semibold text-stone-800">Latest signal snapshot</div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <MiniMetric title="Bias" value={analysis.marketSentiment} />
+              <MiniMetric title="Risk" value={analysis.riskLevel} />
+              <MiniMetric title="Confidence" value={`${analysis.confidenceScore}%`} />
+            </div>
+          </div>
+        ) : null}
+      </Card>
+    </div>
+  );
+}
+
+function AnalyzeTab({
+  dashboard,
+  upload,
+  dragging,
+  busy,
+  canAnalyze,
+  analysisStep,
+  onFileChange,
+  onAnalyze,
+  setDragging,
+}: {
+  dashboard: DashboardData;
+  upload: UploadState;
+  dragging: boolean;
+  busy: boolean;
+  canAnalyze: boolean;
+  analysisStep: number;
+  onFileChange: (file: File | null) => void;
+  onAnalyze: () => void;
+  setDragging: (value: boolean) => void;
+}) {
+  const progress = [16, 42, 74, 100][analysisStep] ?? 0;
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <SectionEyebrow>Analyze</SectionEyebrow>
+            <h2 className="mt-3 text-2xl font-black text-stone-900">
+              Upload a chart and launch the AI reading flow
+            </h2>
+          </div>
+          <div className="rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-stone-700">
+            {ANALYSIS_COST} credits per analysis
+          </div>
+        </div>
+
+        <div
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            const dropped = event.dataTransfer.files?.[0];
+            if (dropped) onFileChange(dropped);
+          }}
+          className={cn(
+            'mt-6 rounded-[2rem] border border-dashed p-5 transition',
+            dragging ? 'border-orange-400 bg-orange-50' : 'border-stone-300 bg-stone-50/80',
+          )}
+        >
+          {upload.previewUrl ? (
+            <img
+              src={upload.previewUrl}
+              alt="Selected chart"
+              className="h-[340px] w-full rounded-[1.5rem] object-cover"
+            />
+          ) : (
+            <div className="flex h-[340px] flex-col items-center justify-center rounded-[1.5rem] border border-stone-200 bg-white text-center">
+              <UploadCloud size={28} className="mb-4 text-orange-500" />
+              <div className="text-lg font-semibold text-stone-900">
+                Drop a trading screenshot here
+              </div>
+              <div className="mt-2 max-w-md text-sm leading-6 text-stone-600">
+                Works great with TradingView, Binance, MetaTrader, broker dashboards, crypto, forex, and stocks.
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+              />
+              Choose screenshot
+            </label>
+            <PrimaryButton onClick={onAnalyze} disabled={!canAnalyze || busy}>
+              {busy ? <LoaderCircle className="animate-spin" size={16} /> : <Sparkles size={16} />}
+              Run AI analysis
+            </PrimaryButton>
+          </div>
+
+          <div className="mt-4 text-sm text-stone-500">
+            {upload.file ? upload.file.name : 'No file selected yet.'}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden bg-gradient-to-br from-white via-[#fff9f1] to-[#fff2e1]">
+        <SectionEyebrow>Process</SectionEyebrow>
+        <h3 className="mt-3 text-2xl font-black text-stone-900">Animated analysis flow</h3>
+        <p className="mt-3 text-sm leading-7 text-stone-600">
+          The model reads the screenshot, estimates structure, checks risk, and prepares a clear buy and sell plan without overwhelming the page.
+        </p>
+
+        <div className="mt-6 rounded-[1.75rem] border border-orange-100 bg-white/80 p-5">
+          <div className="flex items-center justify-between text-sm font-semibold text-stone-700">
+            <span>AI progress</span>
+            <span>{busy ? `${progress}%` : 'Ready'}</span>
+          </div>
+          <div className="mt-3 h-3 rounded-full bg-orange-100">
+            <motion.div
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.45 }}
+              className="h-3 rounded-full bg-gradient-to-r from-orange-500 to-amber-300"
+            />
+          </div>
+          <div className="mt-5 space-y-3">
+            <ProcessStep active={busy && analysisStep >= 0} label="Uploading the chart screenshot" />
+            <ProcessStep active={busy && analysisStep >= 1} label="Detecting market structure and momentum" />
+            <ProcessStep active={busy && analysisStep >= 2} label="Scoring confidence, risk, and signals" />
+            <ProcessStep active={busy && analysisStep >= 3} label="Preparing the full-screen analysis view" />
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <MiniMetric title="Available credits" value={String(dashboard.profile.credits)} />
+          <MiniMetric title="Current plan" value={dashboard.profile.plan} />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function PlansTab({
+  currentPlan,
+  onCheckout,
+}: {
+  currentPlan: string;
+  onCheckout: (id: string, mode: 'payment' | 'subscription') => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <Card className="bg-gradient-to-br from-[#fff9f2] to-white">
+        <SectionEyebrow>Plans</SectionEyebrow>
+        <h2 className="mt-3 text-3xl font-black text-stone-900">Subscriptions and credit packs</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-stone-600">
+          Use subscriptions for steady weekly credits, or top up with one-time packs whenever you need more analysis volume.
+        </p>
+      </Card>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {SUBSCRIPTIONS.map((plan) => (
+          <PlanCard
+            key={plan.id}
+            title={plan.title}
+            price={plan.priceLabel}
+            description={plan.description}
+            featured={currentPlan === plan.id}
+            buttonLabel={currentPlan === plan.id ? 'Current plan' : 'Open checkout'}
+            onClick={() => onCheckout(plan.id, plan.mode)}
+          />
+        ))}
+      </div>
+
+      <Card>
+        <div className="mb-5">
+          <SectionEyebrow>Credit packs</SectionEyebrow>
+          <h3 className="mt-3 text-2xl font-black text-stone-900">One-time packs</h3>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {CREDIT_PACKS.map((pack) => (
+            <PlanCard
+              key={pack.id}
+              title={pack.title}
+              price={pack.priceLabel}
+              description={pack.description}
+              buttonLabel="Buy credits"
+              compact
+              onClick={() => onCheckout(pack.id, pack.mode)}
+            />
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ProfileTab({
+  dashboard,
+  onCheckout,
+  onAnalyze,
+}: {
+  dashboard: DashboardData;
+  onCheckout: () => void;
+  onAnalyze: () => void;
+}) {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <Card>
+        <SectionEyebrow>Profile</SectionEyebrow>
+        <h2 className="mt-3 text-2xl font-black text-stone-900">Account details</h2>
+        <div className="mt-6 space-y-3">
+          <InfoLine label="Email" value={dashboard.profile.email} />
+          <InfoLine label="Credits" value={String(dashboard.profile.credits)} />
+          <InfoLine label="Plan" value={dashboard.profile.plan} />
+          <InfoLine label="Member since" value={formatDate(dashboard.profile.created_at)} />
+          <InfoLine
+            label="Current period end"
+            value={formatDate(dashboard.subscription?.current_period_end)}
+          />
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <PrimaryButton onClick={onAnalyze}>Analyze a chart</PrimaryButton>
+          <SecondaryButton onClick={onCheckout}>See plans</SecondaryButton>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionEyebrow>Performance</SectionEyebrow>
+        <h3 className="mt-3 text-2xl font-black text-stone-900">Simple dashboard visuals</h3>
+        <p className="mt-3 text-sm leading-7 text-stone-600">
+          Designed to stay readable on mobile, with fewer paragraphs and clearer visual cues.
+        </p>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <StatTile title="Credits left" value={String(dashboard.profile.credits)} accent="orange" />
+          <StatTile
+            title="Saved analyses"
+            value={String(dashboard.analyses.length)}
+            accent="blue"
+          />
+          <StatTile
+            title="Account tier"
+            value={dashboard.profile.plan}
+            accent="green"
+          />
+        </div>
+        <div className="mt-6 rounded-[1.75rem] border border-stone-200 bg-stone-50 p-5">
+          <div className="mb-4 text-sm font-semibold text-stone-700">Visual balance</div>
+          <BarsChart
+            items={[
+              { label: 'Signal confidence', value: Math.min(92, 35 + dashboard.analyses.length * 7) },
+              { label: 'Recent activity', value: Math.min(100, dashboard.analyses.length * 12) },
+              { label: 'Credit runway', value: Math.min(100, dashboard.profile.credits) },
+            ]}
+          />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function AboutTab() {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      <Card className="bg-gradient-to-br from-[#fff7ec] to-white">
+        <SectionEyebrow>About</SectionEyebrow>
+        <h2 className="mt-3 text-3xl font-black text-stone-900">What this product focuses on</h2>
+        <div className="mt-6 space-y-4 text-sm leading-7 text-stone-600">
+          <AboutRow
+            icon={<Sparkles size={16} />}
+            title="Fast chart reading"
+            body="Upload screenshots from crypto, forex, or stock platforms and get structured insight in a cleaner format."
+          />
+          <AboutRow
+            icon={<ShieldCheck size={16} />}
+            title="Private backend handling"
+            body="OpenAI and Stripe secrets stay server-side in Supabase Edge Functions."
+          />
+          <AboutRow
+            icon={<Mail size={16} />}
+            title="Simple access"
+            body="Email and Google sign-in keep the flow familiar across desktop and mobile."
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <SectionEyebrow>Design direction</SectionEyebrow>
+        <h3 className="mt-3 text-2xl font-black text-stone-900">Lighter, cleaner, easier to scan</h3>
+        <p className="mt-3 text-sm leading-7 text-stone-600">
+          This interface was reworked toward a brighter product feel: pale surfaces, warm highlights, softer edges, and content blocks that read more like a premium dashboard than a dark developer console.
+        </p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <MiniMetric title="Primary style" value="Light, warm, premium" />
+          <MiniMetric title="Optimized for" value="Phone and desktop" />
+          <MiniMetric title="Result format" value="Visual full-screen report" />
+          <MiniMetric title="Language" value="English only" />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ResultOverlay({
+  analysis,
+  previewUrl,
+  savedAt,
+  onClose,
+}: {
+  analysis: TradeAnalysis;
+  previewUrl: string | null;
+  savedAt: string | null;
+  onClose: () => void;
+}) {
+  const confidence = Math.max(0, Math.min(100, analysis.confidenceScore));
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(252,247,240,0.92)] backdrop-blur-md"
+    >
+      <div className="mx-auto min-h-screen max-w-7xl px-4 py-4 md:px-8 md:py-8">
+        <div className="rounded-[2rem] border border-orange-100 bg-white shadow-[0_32px_120px_rgba(180,118,42,0.18)]">
+          <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[2rem] border-b border-stone-200 bg-white/92 px-5 py-4 backdrop-blur md:px-8">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-500">
+                Analysis result
+              </div>
+              <div className="mt-1 text-lg font-bold text-stone-900">
+                Full-screen trade readout
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-700 transition hover:border-stone-300"
+              aria-label="Close analysis"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="grid gap-8 px-5 py-5 md:px-8 md:py-8 xl:grid-cols-[1fr_1.04fr]">
+            <div className="space-y-6">
+              <div className="overflow-hidden rounded-[1.8rem] border border-stone-200 bg-stone-50">
+                {previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt="Uploaded chart"
+                    className="h-[320px] w-full object-cover md:h-[460px]"
+                  />
+                ) : (
+                  <div className="flex h-[320px] items-center justify-center text-stone-400 md:h-[460px]">
+                    Uploaded chart preview
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <SignalCard title="Bias" value={analysis.marketSentiment} tone={analysis.marketSentiment} />
+                <SignalCard title="Risk" value={analysis.riskLevel} tone={analysis.riskLevel} />
+                <SignalCard title="Confidence" value={`${confidence}%`} tone="confidence" />
+              </div>
+
+              <Card className="p-5">
+                <div className="mb-4 text-sm font-semibold text-stone-700">Scoreboard</div>
+                <BarsChart
+                  items={[
+                    { label: 'Confidence', value: confidence },
+                    { label: 'Momentum', value: confidence > 50 ? Math.min(98, confidence + 4) : confidence + 16 },
+                    { label: 'Risk control', value: analysis.riskLevel === 'low' ? 84 : analysis.riskLevel === 'medium' ? 62 : 38 },
+                  ]}
+                />
+                <div className="mt-4 text-xs text-stone-500">
+                  {savedAt ? `Saved ${formatDate(savedAt)}` : 'Fresh analysis'}
+                </div>
+              </Card>
+            </div>
+
+            <div className="space-y-6">
+              <Card className="p-6">
+                <SectionEyebrow>Trade summary</SectionEyebrow>
+                <h2 className="mt-3 text-3xl font-black text-stone-900">
+                  Clear buy and sell guidance with less noise
+                </h2>
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <InsightPanel title="What is happening?" body={analysis.whatIsHappening} />
+                  <InsightPanel title="Why" body={analysis.reasoning} />
+                  <InsightPanel title="When to BUY" body={analysis.whenToBuy} emphasis />
+                  <InsightPanel title="When to SELL" body={analysis.whenToSell} emphasis />
+                </div>
+              </Card>
+
+              <Card className="p-6">
+                <div className="mb-4 text-sm font-semibold text-stone-700">Entry and exit map</div>
+                <TradeLane analysis={analysis} />
+              </Card>
+
+              <Card className="p-6">
+                <div className="mb-4 text-sm font-semibold text-stone-700">Signals detected</div>
+                <div className="flex flex-wrap gap-2">
+                  {[...analysis.keySignals, ...analysis.detectedIndicators].map((item) => (
+                    <span
+                      key={item}
+                      className="rounded-full border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-semibold text-stone-700"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function TradeLane({ analysis }: { analysis: TradeAnalysis }) {
+  return (
+    <div className="relative overflow-hidden rounded-[1.5rem] border border-stone-200 bg-[#fffaf5] p-5">
+      <div className="absolute left-6 right-6 top-1/2 h-[2px] -translate-y-1/2 bg-gradient-to-r from-stone-200 via-orange-300 to-stone-200" />
+      <div className="relative grid gap-4 md:grid-cols-3">
+        <LaneNode title="Market state" body={analysis.marketSentiment} />
+        <LaneNode title="Buy trigger" body={analysis.whenToBuy} highlighted />
+        <LaneNode title="Sell trigger" body={analysis.whenToSell} />
+      </div>
+    </div>
+  );
+}
+
+function LaneNode({
+  title,
+  body,
+  highlighted = false,
+}: {
+  title: string;
+  body: string;
+  highlighted?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'relative rounded-[1.4rem] border p-4 shadow-sm',
+        highlighted
+          ? 'border-orange-300 bg-white'
+          : 'border-stone-200 bg-white/80',
+      )}
+    >
+      <div className="mb-3 h-3 w-3 rounded-full bg-orange-400" />
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">
+        {title}
+      </div>
+      <div className="mt-3 text-sm leading-6 text-stone-700">{body}</div>
+    </div>
+  );
+}
+
+function InsightPanel({
+  title,
+  body,
+  emphasis = false,
+}: {
+  title: string;
+  body: string;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-[1.5rem] border p-5',
+        emphasis ? 'border-orange-200 bg-orange-50' : 'border-stone-200 bg-stone-50',
+      )}
+    >
+      <div className="text-sm font-semibold text-stone-900">{title}</div>
+      <p className="mt-3 text-sm leading-7 text-stone-600">{body}</p>
+    </div>
+  );
+}
+
+function BarsChart({
+  items,
+}: {
+  items: { label: string; value: number }[];
+}) {
+  return (
+    <div className="space-y-4">
+      {items.map((item) => (
+        <div key={item.label}>
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="font-medium text-stone-700">{item.label}</span>
+            <span className="font-semibold text-stone-500">{item.value}%</span>
+          </div>
+          <div className="h-3 rounded-full bg-stone-200">
+            <div
+              className="h-3 rounded-full bg-gradient-to-r from-orange-500 to-amber-300"
+              style={{ width: `${Math.max(8, Math.min(100, item.value))}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AboutRow({
   icon,
   title,
-  subtitle,
-  children,
+  body,
 }: {
   icon: ReactNode;
   title: string;
-  subtitle: string;
-  children: ReactNode;
+  body: string;
 }) {
   return (
-    <section className="glass p-6">
-      <div className="mb-5 flex items-start gap-3">
-        <div className="rounded-2xl bg-orange-500/15 p-3 text-orange-300">{icon}</div>
-        <div>
-          <h2 className="text-xl font-black text-white">{title}</h2>
-          <p className="mt-1 text-sm leading-6 text-white/55">{subtitle}</p>
-        </div>
+    <div className="flex items-start gap-3 rounded-[1.5rem] border border-stone-200 bg-white p-4">
+      <div className="rounded-2xl bg-orange-50 p-3 text-orange-500">{icon}</div>
+      <div>
+        <div className="font-semibold text-stone-900">{title}</div>
+        <div className="mt-1 text-sm leading-6 text-stone-600">{body}</div>
       </div>
+    </div>
+  );
+}
+
+function ProcessStep({ active, label }: { active: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        className={cn(
+          'h-3 w-3 rounded-full transition',
+          active ? 'bg-orange-500 shadow-[0_0_0_6px_rgba(249,115,22,0.16)]' : 'bg-stone-300',
+        )}
+      />
+      <div className={cn('text-sm', active ? 'text-stone-900' : 'text-stone-500')}>{label}</div>
+    </div>
+  );
+}
+
+function PlanCard({
+  title,
+  price,
+  description,
+  buttonLabel,
+  onClick,
+  featured = false,
+  compact = false,
+}: {
+  title: string;
+  price: string;
+  description: string;
+  buttonLabel: string;
+  onClick: () => void;
+  featured?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-[1.75rem] border p-5',
+        featured ? 'border-orange-300 bg-orange-50' : 'border-stone-200 bg-white',
+      )}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-lg font-black text-stone-900">{title}</div>
+          <div className="mt-2 text-base font-semibold text-stone-700">{price}</div>
+          <div className="mt-2 text-sm leading-6 text-stone-600">{description}</div>
+        </div>
+        {featured ? (
+          <span className="rounded-full border border-orange-300 bg-white px-3 py-1 text-xs font-semibold text-orange-600">
+            Current
+          </span>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'mt-5 inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition',
+          compact
+            ? 'border border-stone-200 bg-stone-900 text-white hover:bg-stone-800'
+            : 'border border-orange-200 bg-stone-900 text-white hover:bg-stone-800',
+        )}
+      >
+        {buttonLabel}
+        <ArrowRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+function SignalCard({
+  title,
+  value,
+  tone,
+}: {
+  title: string;
+  value: string;
+  tone: string;
+}) {
+  const palette =
+    tone === 'bullish' || tone === 'low'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : tone === 'bearish' || tone === 'high'
+        ? 'border-rose-200 bg-rose-50 text-rose-700'
+        : tone === 'confidence'
+          ? 'border-orange-200 bg-orange-50 text-orange-700'
+          : 'border-amber-200 bg-amber-50 text-amber-700';
+
+  return (
+    <div className={cn('rounded-[1.5rem] border p-4', palette)}>
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] opacity-70">{title}</div>
+      <div className="mt-2 text-2xl font-black capitalize">{value}</div>
+    </div>
+  );
+}
+
+function Card({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        'rounded-[2rem] border border-stone-200 bg-white p-5 shadow-[0_18px_60px_rgba(120,95,68,0.08)] md:p-6',
+        className,
+      )}
+    >
       {children}
     </section>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  dark = true,
-}: {
-  label: string;
-  value: string;
-  dark?: boolean;
-}) {
+function SectionEyebrow({ children }: { children: ReactNode }) {
   return (
-    <div
-      className={cn(
-        'rounded-3xl px-5 py-4',
-        dark ? 'bg-white/5 text-white' : 'bg-black/10 text-black',
-      )}
-    >
-      <div className={cn('text-xs uppercase tracking-[0.18em]', dark ? 'text-white/45' : 'text-black/50')}>
-        {label}
-      </div>
-      <div className="mt-2 text-2xl font-black">{value}</div>
+    <div className="text-xs font-semibold uppercase tracking-[0.22em] text-orange-500">
+      {children}
     </div>
   );
 }
 
-function StatusRow({ label, value }: { label: string; value: string }) {
+function MiniMetric({ title, value }: { title: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <span>{label}</span>
-      <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/85">
-        {value}
-      </span>
+    <div className="rounded-[1.5rem] border border-stone-200 bg-white p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{title}</div>
+      <div className="mt-2 text-xl font-black capitalize text-stone-900">{value}</div>
     </div>
   );
 }
 
-function CheckoutRow({
-  title,
-  price,
-  description,
-  onClick,
-  badge,
-}: {
-  title: string;
-  price: string;
-  description: string;
-  onClick: () => void;
-  badge?: string;
-}) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-bold text-white">{title}</h3>
-            {badge ? (
-              <span className="rounded-full border border-orange-400/30 bg-orange-500/10 px-3 py-1 text-xs font-semibold text-orange-200">
-                {badge}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 text-white/80">{price}</div>
-          <div className="mt-2 text-sm text-white/55">{description}</div>
-        </div>
-        <button
-          type="button"
-          onClick={onClick}
-          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-semibold text-white transition hover:border-orange-400/50"
-        >
-          Checkout
-          <ArrowRight size={16} />
-        </button>
-      </div>
+    <div className="rounded-[1.5rem] border border-orange-100 bg-white/85 px-5 py-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{label}</div>
+      <div className="mt-2 text-2xl font-black capitalize text-stone-900">{value}</div>
+    </div>
+  );
+}
+
+function StatusChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-[1.25rem] border border-stone-200 bg-stone-50 px-4 py-3 text-sm">
+      <span className="font-medium text-stone-700">{label}</span>
+      <span className="font-semibold text-stone-500">{value}</span>
     </div>
   );
 }
 
 function InfoLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-white/10 py-3 last:border-b-0">
-      <div className="text-sm text-white/55">{label}</div>
-      <div className="text-right text-sm font-semibold text-white">{value}</div>
+    <div className="flex items-center justify-between gap-4 rounded-[1.2rem] bg-stone-50 px-4 py-3">
+      <div className="text-sm text-stone-500">{label}</div>
+      <div className="text-right text-sm font-semibold capitalize text-stone-800">{value}</div>
     </div>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm leading-6 text-white/55">
+    <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600">
       {text}
     </div>
   );
 }
 
-function AnalysisView({ analysis }: { analysis: TradeAnalysis }) {
-  const sentimentColor =
-    analysis.marketSentiment === 'bullish'
-      ? 'text-emerald-300 border-emerald-400/25 bg-emerald-500/10'
-      : analysis.marketSentiment === 'bearish'
-        ? 'text-rose-300 border-rose-400/25 bg-rose-500/10'
-        : 'text-amber-300 border-amber-400/25 bg-amber-500/10';
-
-  const riskColor =
-    analysis.riskLevel === 'low'
-      ? 'text-emerald-300 border-emerald-400/25 bg-emerald-500/10'
-      : analysis.riskLevel === 'high'
-        ? 'text-rose-300 border-rose-400/25 bg-rose-500/10'
-        : 'text-amber-300 border-amber-400/25 bg-amber-500/10';
-
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={`${analysis.marketSentiment}-${analysis.confidenceScore}-${analysis.whenToBuy}`}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -16 }}
-        transition={{ duration: 0.25 }}
-      >
-        <div className="grid gap-3 md:grid-cols-3">
-          <TagCard title="Sentiment" value={analysis.marketSentiment} className={sentimentColor} />
-          <TagCard title="Risk" value={analysis.riskLevel} className={riskColor} />
-          <TagCard title="Confidence" value={`${analysis.confidenceScore}%`} className="text-orange-200 border-orange-400/25 bg-orange-500/10" />
-        </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <CopyBlock title="What is happening?" body={analysis.whatIsHappening} />
-          <CopyBlock title="Why" body={analysis.reasoning} />
-          <CopyBlock title="When to BUY" body={analysis.whenToBuy} />
-          <CopyBlock title="When to SELL" body={analysis.whenToSell} />
-        </div>
-
-        <div className="mt-5 rounded-3xl border border-white/10 bg-black/20 p-5">
-          <div className="mb-3 text-sm font-semibold text-white">Signals</div>
-          <div className="flex flex-wrap gap-2">
-            {[...analysis.keySignals, ...analysis.detectedIndicators].map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-    </AnimatePresence>
-  );
-}
-
-function TagCard({
+function StatTile({
   title,
   value,
-  className,
+  accent,
 }: {
   title: string;
   value: string;
-  className: string;
+  accent: 'orange' | 'blue' | 'green';
 }) {
+  const palette =
+    accent === 'orange'
+      ? 'bg-orange-50 border-orange-200'
+      : accent === 'blue'
+        ? 'bg-sky-50 border-sky-200'
+        : 'bg-emerald-50 border-emerald-200';
   return (
-    <div className={cn('rounded-3xl border p-4', className)}>
-      <div className="text-xs uppercase tracking-[0.18em] text-white/45">{title}</div>
-      <div className="mt-2 text-2xl font-black capitalize">{value}</div>
+    <div className={cn('rounded-[1.5rem] border p-5', palette)}>
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{title}</div>
+      <div className="mt-2 text-2xl font-black capitalize text-stone-900">{value}</div>
     </div>
   );
 }
 
-function CopyBlock({ title, body }: { title: string; body: string }) {
+function PrimaryButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-      <div className="text-sm font-semibold text-white">{title}</div>
-      <p className="mt-3 text-sm leading-6 text-white/65">{body}</p>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center gap-2 rounded-2xl bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({
+  children,
+  onClick,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-5 py-3 text-sm font-semibold text-stone-700 transition hover:border-stone-300"
+    >
+      {children}
+    </button>
   );
 }
