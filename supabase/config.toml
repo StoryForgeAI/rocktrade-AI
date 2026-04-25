@@ -1,0 +1,13 @@
+project_id = "snapprice"
+
+[functions.analyze-trade-image]
+verify_jwt = true
+
+[functions.create-checkout-session]
+verify_jwt = true
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.refill-weekly-credits]
+verify_jwt = false
